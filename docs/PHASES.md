@@ -330,6 +330,77 @@ clicked through with an admin login.
 
 ---
 
+## Phase 6 — Analytics (`/analytics`)
+
+**Status:** ✅ Complete (typecheck, lint and production build pass). Verified against live data and
+rendered in headless Chrome in light and dark mode.
+
+**Built**
+- **Slicers** (`src/lib/analytics/filters.ts`, client-safe) are synced to the URL:
+  - `range=1d|7d|30d|90d|all|custom` (`from`/`to`), `owner`, `method` (CASH/PAGO_MOVIL/FIADO), `category`;
+  - invalid params fall back to defaults;
+  - `resolvePeriod()` gives the shop-local day window plus an equal-length **previous** window for deltas
+    (none for "all").
+  - One slicer row sits above everything. While the next slice loads, the current render stays at reduced
+    opacity (`useOptimistic` + transition, no skeleton flash).
+- **Queries** (`src/lib/analytics/queries.ts`): one self-contained function per metric. Each states the slicers
+  it honors and excludes voided rows. They share a `saleLines()` base (revenue, units, cost, profit per line)
+  and an `inWindow()` helper.
+  - **Adding a metric:** write `getX(f, period)`, add its type to `types.ts`, render it.
+- **KPIs:**
+  - revenue (sales incl. Fiado), gross profit (revenue − units × `unit_cost_snapshot`) and margin, units;
+  - % change vs the previous period (margin change in percentage points);
+  - pending Fiado (current snapshot);
+  - owner spotlight: highest investor and top-ROI owner.
+- **Visuals** (`src/components/analytics/`, Recharts via the shadcn chart component). Each sits in a
+  `ChartCard` with a **Chart ⇄ Table** toggle:
+  - revenue vs gross profit over time (daily/weekly);
+  - top products (units / revenue / net profit, top 10);
+  - owner performance: Invested/Revenue/Profit grouped bars, plus a separate ROI % chart;
+  - payment-method donut;
+  - weekday × hour heatmap;
+  - restock & stockout watchlist (days left = stock ÷ average daily sell-through over the period's length,
+    clamped 7–90 days, 30 days for "all").
+- **CSV export**: `GET /api/analytics/export?dataset=…&<slicers>` for 7 datasets (sales lines, daily, products,
+  owners, payments, velocity, watchlist). Same parser and queries as the page, UTF-8 BOM, formula-injection
+  guard, 60/hour per IP.
+
+**Decisions**
+- **Two profit notions, both labelled:**
+  - **gross profit** (sales − cost of goods) for the sales KPIs and charts;
+  - owner metrics stay **cash basis**, the same as /owners (revenue = cash + Pago Móvil sales + abonos;
+    invested = injections + restocks).
+- **No dual axis.** ROI % is its own chart beside the Bs. grouped bars.
+- **Slicers that don't apply are disclosed on the card:** owners ignore payment and category; the payment donut
+  ignores the payment filter; the watchlist ignores the payment filter.
+- **Palette** (dataviz skill, validator-checked):
+  - The colors picked by eye in the semantic-tokens change **failed** colorblind checks (deutan ΔE 4.2) and the
+    dark lightness band. `--chart-1…8` is now the validated reference order in both modes.
+  - **Owners** take slots 1–4 (`(id − 1) mod 8`), and owner badges site-wide changed color accordingly.
+  - **Non-owner series** take slots 5–8: revenue violet, profit green, Pago Móvil violet, cash green, Fiado magenta.
+  - **The heatmap** is a single-hue sequential scale (slot 1 mixed toward the card surface).
+  - The light-mode contrast WARNs are relieved by the table views and legends.
+- Big KPI values use proportional figures (`tabular-nums` removed from the shared `KpiCard` too).
+
+**Verification**
+- All filter combinations agree internally: series = products = heatmap = sale lines, for revenue.
+- Independent SQL matches:
+  - all-time revenue Bs. 1,079,300;
+  - Fiado in the last 7 days Bs. 22,900;
+  - pending Fiado Bs. 85,300.
+- 30-day CSV: 217 lines summing to Bs. 315,900, which equals the period's KPI.
+- All 7 exports return 200; an unknown dataset returns 400.
+- All 8 queries together run in about 0.4–0.5 s.
+
+**Gotchas**
+- `shadcn add chart` silently **downgraded recharts to ^3.8** — restored to ^3.11 (check `package.json` after any
+  shadcn add).
+- Recharts' legend sorts items by data-key strings (`o10` before `o9`); use `itemSorter={null}` to keep the
+  order series are drawn in.
+- Bash heredocs break on apostrophes in dictionary text; insert large i18n blocks with a script file.
+
+---
+
 ## Open items / next up
 - Owner to confirm the `Retiro` / `Aporte` interpretation.
 - Click through all admin modals (inventory + Phase 4) with a real admin login.
@@ -337,4 +408,4 @@ clicked through with an admin login.
 - Add `GEMINI_API_KEY` on Vercel too (it is set locally). Click through the AI Cashier as an admin:
   confirm one of each (sale, Fiado with a new client, abono, restock).
 - Fill in product aliases in /inventory (e.g. "colita", "pepsi negra") to sharpen matching.
-- Committed and pushed through Phase 5 (2026-11-22).
+- Committed and pushed through Phase 6 (2026-11-22).

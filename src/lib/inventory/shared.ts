@@ -85,7 +85,7 @@ export type AdjustmentReason = (typeof ADJUSTMENT_REASONS)[number];
 /* ── Owner colors ─────────────────────────────────────────────────────────── */
 
 /**
- * Owners use the categorical --chart-1…6 tokens (globals.css), so a badge and
+ * Owners use the categorical --chart-1…8 tokens (globals.css; slot = (id − 1) mod 8), so a badge and
  * a chart series for the same owner share one color. Class strings are written
  * out in full so Tailwind can detect them. Text stays text-foreground on the
  * tint for contrast in both themes.
@@ -97,6 +97,8 @@ const OWNER_PALETTE = [
   "bg-chart-4/15 text-foreground ring-chart-4/50",
   "bg-chart-5/15 text-foreground ring-chart-5/50",
   "bg-chart-6/15 text-foreground ring-chart-6/50",
+  "bg-chart-7/15 text-foreground ring-chart-7/50",
+  "bg-chart-8/15 text-foreground ring-chart-8/50",
 ];
 
 const ownerIndex = (ownerId: number) => (ownerId - 1 + OWNER_PALETTE.length) % OWNER_PALETTE.length;

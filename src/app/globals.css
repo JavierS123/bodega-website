@@ -18,6 +18,8 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-8: var(--chart-8);
+  --color-chart-7: var(--chart-7);
   --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
@@ -83,13 +85,20 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  /* Categorical palette (owners, chart series). Owner N always maps to the same chart color. */
-  --chart-1: oklch(0.685 0.169 237.323);
-  --chart-2: oklch(0.606 0.25 292.717);
-  --chart-3: oklch(0.705 0.213 47.604);
-  --chart-4: oklch(0.656 0.241 354.308);
-  --chart-5: oklch(0.704 0.14 182.503);
-  --chart-6: oklch(0.768 0.233 130.85);
+  /*
+   * Categorical palette — the validated dataviz reference order (fixed, never cycled).
+   * Passes the colorblind-safety gates in both modes (adjacent CVD ΔE ≥ 8.4, normal ≥ 19.3);
+   * re-run the validator before changing any value or the order.
+   * Slots 1–4 = owners (by id), slots 5–8 = non-owner series (revenue/profit, payment methods).
+   */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-7: #6250d6;
+  --chart-8: #e34948;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -127,12 +136,15 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.746 0.16 232.661);
-  --chart-2: oklch(0.702 0.183 293.541);
-  --chart-3: oklch(0.75 0.183 55.934);
-  --chart-4: oklch(0.718 0.202 349.761);
-  --chart-5: oklch(0.777 0.152 181.912);
-  --chart-6: oklch(0.841 0.238 128.85);
+  /* Same eight hues stepped for the dark surface (selected, not auto-flipped). */
+  --chart-1: #3987e5;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #c98500;
+  --chart-5: #d55181;
+  --chart-6: #0ca30c;
+  --chart-7: #9085e9;
+  --chart-8: #e66767;
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

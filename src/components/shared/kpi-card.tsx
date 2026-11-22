@@ -43,7 +43,7 @@ export function KpiCard({
       </div>
       <p
         className={cn(
-          "truncate text-xl font-semibold tracking-tight tabular-nums sm:text-2xl",
+          "truncate text-xl font-semibold tracking-tight sm:text-2xl",
           tone === "danger" && "text-destructive",
           tone === "positive" && "text-success",
         )}
