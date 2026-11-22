@@ -1,14 +1,14 @@
 "use server";
 
 import { eq, sql } from "drizzle-orm";
-import { refresh } from "next/cache";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { products, transactionItems, transactions } from "@/db/schema";
-import { isAuthError, requireAdmin } from "@/lib/auth/guards";
+import type { ActionResult as BaseResult } from "@/lib/action-result";
 import { ADJUSTMENT_REASONS } from "@/lib/inventory/shared";
 import { centsToDecimal, toCents } from "@/lib/money";
+import { ActionError as BaseActionError, runAdminAction, zId, zMoney } from "@/lib/server/action";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Result contract (serializable; the client maps `error` to an i18n message)
@@ -23,68 +23,28 @@ export type InventoryErrorCode =
   | "noChange"
   | "unknown";
 
-export type ActionResult<T = undefined> =
-  | { ok: true; data: T }
-  | { ok: false; error: InventoryErrorCode; fieldErrors?: Record<string, string[]> };
+export type ActionResult<T = undefined> = BaseResult<T, InventoryErrorCode>;
 
-class ActionError extends Error {
-  constructor(readonly code: InventoryErrorCode) {
-    super(code);
-  }
-}
+class ActionError extends BaseActionError<InventoryErrorCode> {}
 
 /** Shared wrapper: admin check → validate → run → refresh the router. */
-async function run<S extends z.ZodType, T>(
+function run<S extends z.ZodType, T>(
   schema: S,
   input: unknown,
   fn: (data: z.output<S>) => Promise<T>,
 ): Promise<ActionResult<T>> {
-  try {
-    await requireAdmin();
-  } catch (error) {
-    if (isAuthError(error)) return { ok: false, error: "unauthorized" };
-    throw error;
-  }
-
-  const parsed = schema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      ok: false,
-      error: "validation",
-      fieldErrors: z.flattenError(parsed.error).fieldErrors as Record<string, string[]>,
-    };
-  }
-
-  try {
-    const data = await fn(parsed.data);
-    refresh(); // re-render the current route (table + KPIs) with fresh data
-    return { ok: true, data };
-  } catch (error) {
-    if (error instanceof ActionError) return { ok: false, error: error.code };
-    if (pgErrorCode(error) === "23505") return { ok: false, error: "duplicateSku" };
-    console.error("[inventory action]", error);
-    return { ok: false, error: "unknown" };
-  }
-}
-
-/** Postgres SQLSTATE from a postgres-js error (possibly wrapped by Drizzle). */
-function pgErrorCode(error: unknown): string | undefined {
-  for (let e: unknown = error, i = 0; e && i < 3; e = (e as { cause?: unknown }).cause, i++) {
-    const code = (e as { code?: unknown }).code;
-    if (typeof code === "string") return code;
-  }
-  return undefined;
+  return runAdminAction<S, T, InventoryErrorCode>(
+    { schema, input, label: "inventory", onUniqueViolation: "duplicateSku" },
+    fn,
+  );
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Schemas
  * ──────────────────────────────────────────────────────────────────────────── */
 
-const money = z
-  .string()
-  .trim()
-  .regex(/^\d{1,10}(\.\d{1,2})?$/, "Invalid amount");
-const id = z.number().int().positive();
+const money = zMoney;
+const id = zId;
 const count = (max: number) => z.number().int().min(0).max(max);
 
 const productSchema = z.object({

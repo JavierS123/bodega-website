@@ -136,7 +136,76 @@ Admin write paths not yet exercised end-to-end (needs an admin login).
 
 ---
 
+## Phase 4 — Ledger, Clients & Fiado, Owners
+
+**Status:** ✅ Complete (typecheck, lint and production build pass; all three pages verified
+against live data). Admin write paths verified at the data-model level (rolled-back SQL), not yet
+clicked through with an admin login.
+
+**Built**
+- **`/transactions`** — server-paginated ledger (25/page) driven by URL params
+  (`from,to,type,method,owner,client,source,status,page`; parsed leniently in
+  `src/lib/transactions/shared.ts`). Owner filter = any line item OR debt-payment split for that
+  owner. Expandable rows (TanStack) show line items (qty, unit price/cost snapshot, owner, line total),
+  the abono split (units settled + cash credit), notes and void info. Mobile card list. Filters update
+  via `router.push` in a transition with `useOptimistic` (controls move instantly, table dims).
+  Admin: **Manual sale** (multi-line, CASH / PAGO_MOVIL / FIADO, client required for Fiado, stock
+  warning), **Edit** (notes / method / client), **Void** (preview of stock + debt effects, required reason).
+- **`/clients`** — KPI strip (total pending, debtors, largest balance, abonos last 30 days) and a table
+  ranked by pending debt (settled clients hidden by default). Expanding a row shows debt per owner with the
+  outstanding units at today's price, cash credit, and the last 25 Fiado/Abono entries.
+  Admin: **Add/Edit client**, **Registrar Abono** (client → owner, showing the exact amount owed → amount
+  with "pay all", method, live preview of units settled and remaining balance).
+- **`/owners`** — owner tabs + 4 comparison cards (net profit + ROI, invested, revenue, pending Fiado,
+  cash / Pago Móvil / Por Transferir). Below them: performance and balance breakdown for the selected owner,
+  or for all owners combined, plus the settlement history (client-side pagination).
+  Admin: **Record settlement** (all 4 types; method limited by type; soft warning if a payout/deposit
+  exceeds the available balance).
+- Shared: `runAdminAction()` in `src/lib/server/action.ts` (requireAdmin → Zod → run → `refresh()`;
+  inventory actions now use it too), `ActionResult<T, Code>` in `src/lib/action-result.ts`,
+  `src/components/shared/` (`EmptyState`, `Pill/PillGroup`, `KpiCard`, skeletons, `FormField`,
+  typed `OptionSelect`).
+
+**Domain decisions (confirmed by the owner)**
+- **Abono settles units**: the amount pays for whole outstanding Fiado units first (oldest Fiado
+  first, at today's sale price) → `debt_payment_items`. Any remainder becomes cash credit. Amounts above
+  what the client owes that owner are rejected (`exceedsDebt`). The client row is locked
+  `FOR UPDATE` so two concurrent abonos can't both pass the check. Unit math:
+  `getOutstandingUnits()` in `src/lib/clients/debt.ts` (same logic as the `client_debt_balances` view).
+- **Owner profit is cash-basis**: Net = Revenue − Invested; ROI = Net / Invested.
+  Invested = capital injections + restocks; Revenue = cash + Pago Móvil sales + collected abonos.
+- Owner balances reuse the Phase 2 reconciled formulas (`src/lib/analytics/owners.ts`):
+  Cash = cash sales + cash abonos − CASH_DEPOSIT;
+  Por Transferir = PM sales + PM abonos + CASH_DEPOSIT + CAPITAL_INJECTION − PAYOUT_TRANSFER.
+- **Void** = `is_voided + voided_at + void_reason`, plus reversing each stock delta in one
+  `db.transaction`. Debt needs no write, because the view already excludes voided rows. Edit never changes
+  amounts or items (void and re-enter instead). A DEBT_PAYMENT's client can't change, and its method change
+  is copied onto `debt_payments`.
+
+**Schema changes** — migration `0002_void_audit` (**applied via Supabase MCP**): `transactions.voided_at`,
+`void_reason`, index on `source`, check `is_voided = (voided_at IS NOT NULL)`.
+
+**Verification**
+- Page numbers match independent SQL: 770 txns, 91 abonos, 279 Fiado sales, total debt Bs. 85,300.00
+  (units 88,300 − cash credit 3,000), 193 settlements, per-owner net profit, owner filter (Frank = 465).
+- Write-path model tested in a rolled-back DO block: a 1-unit + Bs. 1 abono lowers the balance by exactly
+  the amount; voiding it restores the balance; voiding a Fiado sale restores its stock and removes the debt.
+
+**Gotchas**
+- Raw `db.execute<T>()` row types must be `type` aliases, not `interface` (they need an index signature).
+- Read `searchParams` only inside `<Suspense>` (Cache Components / Partial Prefetching). The page passes
+  the promise down to the content component.
+- Avoid `formatRelativeTime` in SSR'd client components: server and client clocks differ and cause
+  hydration mismatches. Use absolute dates.
+- Voiding a RESTOCK reverses stock but **not** the pack cost / sale price it set.
+- Legacy split-payment rows (#63, #729) are stored with one payment method, so DB-derived cash/bank can
+  differ from the sheet by those amounts.
+- Manual sales may drive stock negative on purpose (the shelf wins); `/inventory` flags it as AUDIT.
+
+---
+
 ## Open items / next up
 - Owner to confirm the `Retiro` / `Aporte` interpretation.
-- Test the three inventory modals with an admin login.
-- Not yet committed: Phases 2–3 (as of 2026-11-22).
+- Click through all admin modals (inventory + Phase 4) with a real admin login.
+- Settlements can't be edited or voided yet (no `is_voided` on `owner_settlements`) — add if needed.
+- Committed and pushed through Phase 4 (2026-11-22).

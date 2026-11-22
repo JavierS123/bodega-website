@@ -14,15 +14,16 @@ import {
   ArrowUpDown,
   ClipboardCheck,
   PackagePlus,
-  PackageSearch,
   Pencil,
   Plus,
   Search,
   X,
 } from "lucide-react";
-import { useCallback, useDeferredValue, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 
 import { AdminOnly } from "@/components/layout/admin-only";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Pill, PillGroup } from "@/components/shared/filter-pills";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -457,78 +458,6 @@ function ProductCard({ product: p, t, openDialog }: { product: InventoryProduct;
         </dd>
       </dl>
       <RowActions product={p} t={t} openDialog={openDialog} withLabels />
-    </Card>
-  );
-}
-
-function PillGroup({
-  label,
-  children,
-  className,
-  segmented = false,
-}: {
-  label: string;
-  children: ReactNode;
-  className?: string;
-  segmented?: boolean;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label={label}
-      className={cn(
-        "-mx-1 flex max-w-full gap-1 overflow-x-auto px-1 py-0.5 [scrollbar-width:none]",
-        segmented && "mx-0 shrink-0",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Pill({
-  active,
-  onClick,
-  children,
-  segmented = false,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: ReactNode;
-  segmented?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "h-7 shrink-0 px-3 text-xs font-medium whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-        segmented ? "rounded-md" : "rounded-full border",
-        active
-          ? segmented
-            ? "bg-background text-foreground shadow-sm"
-            : "border-primary bg-primary text-primary-foreground"
-          : segmented
-            ? "text-muted-foreground hover:text-foreground"
-            : "border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function EmptyState({ title, hint, action }: { title: string; hint: string; action?: ReactNode }) {
-  return (
-    <Card className="items-center gap-2 border-dashed px-4 py-12 text-center">
-      <div className="flex size-11 items-center justify-center rounded-full bg-muted">
-        <PackageSearch className="size-5 text-muted-foreground" aria-hidden />
-      </div>
-      <p className="font-medium">{title}</p>
-      <p className="max-w-sm text-sm text-muted-foreground">{hint}</p>
-      {action && <div className="mt-2">{action}</div>}
     </Card>
   );
 }

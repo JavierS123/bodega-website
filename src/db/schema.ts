@@ -141,10 +141,14 @@ export const transactions = pgTable(
     notes: text("notes"),
     source: transactionSourceEnum("source").notNull(),
     isVoided: boolean("is_voided").notNull().default(false),
+    /** When / why a transaction was voided (audit trail; the row itself is never deleted). */
+    voidedAt: timestamptz("voided_at"),
+    voidReason: text("void_reason"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
     index("transactions_occurred_at_idx").on(t.occurredAt),
+    index("transactions_source_idx").on(t.source),
     index("transactions_client_id_idx").on(t.clientId),
     index("transactions_type_occurred_at_idx").on(t.type, t.occurredAt),
     // Makes the CSV import idempotent (NULLs stay distinct for non-legacy rows).
@@ -153,6 +157,10 @@ export const transactions = pgTable(
     check(
       "transactions_fiado_requires_client",
       sql`${t.paymentMethod} <> 'FIADO' OR ${t.clientId} IS NOT NULL`,
+    ),
+    check(
+      "transactions_void_consistent",
+      sql`${t.isVoided} = (${t.voidedAt} IS NOT NULL)`,
     ),
   ],
 ).enableRLS();

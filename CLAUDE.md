@@ -56,3 +56,4 @@ BodegaOS is a full-stack internal operations and business intelligence web app f
 - At the end of every phase, append its results (what was built, decisions, gotchas, open items) to `docs/PHASES.md`. Read that file first when starting a new phase.
 - Keep Server Components as default for data fetching; use `'use client'` only for interactive tables, modals, charts, and chat input.
 - Every UI table must handle loading skeletons, empty states, and mobile responsiveness gracefully.
+- Always use Shadcn semantic color tokens (bg-primary, text-muted-foreground, bg-card, var(--chart-1)) instead of hardcoded Tailwind colors like bg-blue-600 or text-gray-700.
