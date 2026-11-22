@@ -54,6 +54,7 @@ export function ProductFormDialog({
   const [sku, setSku] = useState(product?.sku ?? "");
   const [name, setName] = useState(product?.name ?? "");
   const [category, setCategory] = useState(product?.category ?? "");
+  const [aliases, setAliases] = useState(product?.aliases.join(", ") ?? "");
   const [ownerId, setOwnerId] = useState(product ? String(product.ownerId) : "");
   const [unitsPerPack, setUnitsPerPack] = useState(String(product?.unitsPerPack ?? 1));
   const [packCost, setPackCost] = useState(product?.packCost ?? "");
@@ -90,6 +91,10 @@ export function ProductFormDialog({
       sku,
       name,
       category,
+      aliases: aliases
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean),
       ownerId: Number(ownerId),
       unitsPerPack: upp,
       packCost: packCost.trim(),
@@ -186,6 +191,17 @@ export function ProductFormDialog({
               </datalist>
             </FormField>
           </div>
+
+          <FormField label={f.aliases} htmlFor="p-aliases" invalid={invalid.has("aliases")} hint={f.aliasesHint}>
+            <Input
+              id="p-aliases"
+              value={aliases}
+              onChange={(e) => setAliases(e.target.value)}
+              placeholder={f.aliasesPlaceholder}
+              maxLength={400}
+              {...fieldProps("aliases")}
+            />
+          </FormField>
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <FormField label={f.unitsPerPack} htmlFor="p-upp" invalid={invalid.has("unitsPerPack")}>

@@ -10,6 +10,8 @@ export interface InventoryProduct {
   sku: string;
   name: string;
   category: string | null;
+  /** Alternate names for the AI Cashier (lower-case). */
+  aliases: string[];
   ownerId: number;
   ownerName: string;
   unitsPerPack: number;

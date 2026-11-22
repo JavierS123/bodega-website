@@ -92,6 +92,8 @@ export const products = pgTable(
     id: id(),
     sku: text("sku").notNull().unique(), // e.g. REF_NEG
     name: text("name").notNull(),
+    /** Alternate names the AI Cashier should recognize ("colita", "pepsi negra"). Lower-case. */
+    aliases: text("aliases").array().notNull().default(sql`'{}'::text[]`),
     category: text("category"),
     ownerId: integer("owner_id")
       .notNull()

@@ -27,6 +27,11 @@ export interface ClientOwnerDebt {
   units: OutstandingUnit[];
 }
 
+/** A client's debt with one owner, for previews outside /clients (e.g. the AI Cashier card). */
+export interface OpenDebt extends ClientOwnerDebt {
+  clientId: number;
+}
+
 export interface ClientHistoryEntry {
   transactionId: number;
   occurredAt: Date;

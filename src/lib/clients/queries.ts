@@ -9,7 +9,14 @@ import { centsToDecimal, toCents } from "@/lib/money";
 import type { ClientOption, MoneyMethod } from "@/lib/transactions/shared";
 
 import { getOutstandingUnits } from "./debt";
-import { isSettled, type ClientDebtSummary, type ClientHistoryEntry, type ClientOwnerDebt, type ClientsKpis } from "./shared";
+import {
+  isSettled,
+  type ClientDebtSummary,
+  type ClientHistoryEntry,
+  type ClientOwnerDebt,
+  type ClientsKpis,
+  type OpenDebt,
+} from "./shared";
 
 /** Recent Fiado sales / abonos kept per client for the expandable history. */
 const HISTORY_PER_CLIENT = 25;
@@ -161,6 +168,36 @@ export async function listClientsWithDebt(): Promise<ClientDebtSummary[]> {
   return result.sort(
     (a, b) => toCents(b.totalPending) - toCents(a.totalPending) || a.name.localeCompare(b.name, "es"),
   );
+}
+
+/**
+ * Every non-zero (client, owner) debt with its owed units in allocation order
+ * (oldest Fiado first). Light: no history. Used by the AI Cashier card to
+ * preview abonos exactly as allocateAbono() will settle them.
+ */
+export async function listOpenDebts(): Promise<OpenDebt[]> {
+  await connection();
+  const balances = await db
+    .select({
+      clientId: clientDebtBalances.clientId,
+      ownerId: clientDebtBalances.ownerId,
+      ownerName: owners.name,
+      balance: clientDebtBalances.balance,
+      unitsValue: clientDebtBalances.unitsValue,
+      cashCredit: clientDebtBalances.cashCredit,
+    })
+    .from(clientDebtBalances)
+    .innerJoin(owners, eq(owners.id, clientDebtBalances.ownerId));
+  const units = await getOutstandingUnits(db);
+
+  return balances
+    .map((b) => ({
+      ...b,
+      units: units
+        .filter((u) => u.client_id === b.clientId && u.owner_id === b.ownerId)
+        .map((u) => ({ productId: u.product_id, sku: u.sku, productName: u.product_name, qty: u.qty, price: u.price, value: u.value })),
+    }))
+    .filter((d) => !isSettled(d.balance) || d.units.length > 0);
 }
 
 /** KPI strip for /clients (derived from the list + one query for recent abonos). */

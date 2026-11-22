@@ -11,7 +11,7 @@ BodegaOS is a full-stack internal operations and business intelligence web app f
 - **Data Tables & Charts:** TanStack Table v8 + Recharts (via Shadcn Charts)
 - **Database & Auth:** Supabase (PostgreSQL + Supabase Auth via `@supabase/ssr`)
 - **ORM & Validation:** Drizzle ORM (`postgres` driver connected to Supabase Transaction Pooler) + Zod
-- **AI Engine:** Google Gen AI SDK (`@google/genai`) using Gemini 2.5 Flash with Structured Outputs (JSON Schema)
+- **AI Engine:** Google Gen AI SDK (`@google/genai`) using Gemini 3.5 Flash-Lite (`gemini-3.5-flash-lite`, overridable via `GEMINI_MODEL`) with Structured Outputs (JSON Schema)
 - **Hosting:** Vercel Hobby Plan (Free)
 
 ## 3. Non-Negotiable Architecture & Security Rules

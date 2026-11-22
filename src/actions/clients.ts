@@ -1,20 +1,12 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
-import {
-  clientDebtBalances,
-  clients,
-  debtPaymentItems,
-  debtPayments,
-  owners,
-  transactions,
-} from "@/db/schema";
+import { clients } from "@/db/schema";
 import type { ActionResult as BaseResult } from "@/lib/action-result";
-import { getOutstandingUnits } from "@/lib/clients/debt";
-import { centsToDecimal, toCents } from "@/lib/money";
+import { toCents } from "@/lib/money";
 import {
   ActionError as BaseActionError,
   runAdminAction,
@@ -23,6 +15,7 @@ import {
   zNote,
   zOccurredAt,
 } from "@/lib/server/action";
+import { commitDebtPayment } from "@/lib/server/ledger";
 import { MONEY_METHODS } from "@/lib/transactions/shared";
 
 export type ClientErrorCode =
@@ -113,82 +106,15 @@ export async function registerDebtPayment(
 ): Promise<ActionResult<{ transactionId: number; unitsSettled: number; remaining: string }>> {
   return run(debtPaymentSchema, input, async (v) =>
     db.transaction(async (tx) => {
-      // Serialize abonos per client so two concurrent payments can't both pass the balance check.
-      const [client] = await tx
-        .select({ id: clients.id })
-        .from(clients)
-        .where(eq(clients.id, v.clientId))
-        .for("update");
-      if (!client) throw new ActionError("notFound");
-      const [owner] = await tx.select({ id: owners.id }).from(owners).where(eq(owners.id, v.ownerId));
-      if (!owner) throw new ActionError("notFound");
-
-      const [debt] = await tx
-        .select({ balance: clientDebtBalances.balance })
-        .from(clientDebtBalances)
-        .where(and(eq(clientDebtBalances.clientId, v.clientId), eq(clientDebtBalances.ownerId, v.ownerId)));
-      const balanceCents = debt ? toCents(debt.balance) : 0;
-      const amountCents = toCents(v.amount);
-      if (balanceCents <= 0) throw new ActionError("noDebt");
-      if (amountCents > balanceCents) throw new ActionError("exceedsDebt");
-
-      // Allocate to whole units, oldest Fiado first.
-      const outstanding = await getOutstandingUnits(tx, { clientId: v.clientId, ownerId: v.ownerId });
-      let remaining = amountCents;
-      const settled: { productId: number; quantity: number; price: string; lineCents: number }[] = [];
-      for (const u of outstanding) {
-        const priceCents = toCents(u.price);
-        if (u.qty <= 0 || priceCents <= 0) continue;
-        const quantity = Math.min(u.qty, Math.floor(remaining / priceCents));
-        if (quantity <= 0) continue;
-        settled.push({ productId: u.product_id, quantity, price: u.price, lineCents: quantity * priceCents });
-        remaining -= quantity * priceCents;
-      }
-
-      const occurredAt = v.occurredAt ?? new Date();
-      const [txn] = await tx
-        .insert(transactions)
-        .values({
-          occurredAt,
-          type: "DEBT_PAYMENT",
-          paymentMethod: v.paymentMethod,
-          clientId: v.clientId,
-          totalAmount: v.amount,
-          notes: v.notes,
-          source: "WEB_MANUAL",
-        })
-        .returning({ id: transactions.id });
-
-      const [dp] = await tx
-        .insert(debtPayments)
-        .values({
-          transactionId: txn.id,
-          clientId: v.clientId,
-          ownerId: v.ownerId,
-          amount: v.amount,
-          paymentMethod: v.paymentMethod,
-          occurredAt,
-          notes: v.notes,
-        })
-        .returning({ id: debtPayments.id });
-
-      if (settled.length > 0) {
-        await tx.insert(debtPaymentItems).values(
-          settled.map((s) => ({
-            debtPaymentId: dp.id,
-            productId: s.productId,
-            quantity: s.quantity,
-            unitPriceSnapshot: s.price,
-            lineTotal: centsToDecimal(s.lineCents),
-          })),
-        );
-      }
-
-      return {
-        transactionId: txn.id,
-        unitsSettled: settled.reduce((sum, s) => sum + s.quantity, 0),
-        remaining: centsToDecimal(balanceCents - amountCents),
-      };
+      const r = await commitDebtPayment(tx, {
+        clientId: v.clientId,
+        paymentMethod: v.paymentMethod,
+        mode: { kind: "amount", ownerId: v.ownerId, amount: v.amount },
+        notes: v.notes,
+        occurredAt: v.occurredAt,
+        source: "WEB_MANUAL",
+      });
+      return { transactionId: r.transactionId, unitsSettled: r.unitsSettled, remaining: r.remaining ?? "0.00" };
     }),
   );
 }

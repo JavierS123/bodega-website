@@ -1,14 +1,14 @@
 "use server";
 
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { products, transactionItems, transactions } from "@/db/schema";
 import type { ActionResult as BaseResult } from "@/lib/action-result";
 import { ADJUSTMENT_REASONS } from "@/lib/inventory/shared";
-import { centsToDecimal, toCents } from "@/lib/money";
 import { ActionError as BaseActionError, runAdminAction, zId, zMoney } from "@/lib/server/action";
+import { commitRestock, unitCostSql } from "@/lib/server/ledger";
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Result contract (serializable; the client maps `error` to an i18n message)
@@ -21,6 +21,7 @@ export type InventoryErrorCode =
   | "notFound"
   | "stale"
   | "noChange"
+  | "inactiveProduct"
   | "unknown";
 
 export type ActionResult<T = undefined> = BaseResult<T, InventoryErrorCode>;
@@ -55,6 +56,13 @@ const productSchema = z.object({
     .toUpperCase()
     .regex(/^[A-Z0-9_]{2,32}$/, "2–32 characters: A–Z, 0–9, _"),
   name: z.string().trim().min(1).max(120),
+  /** Comma-separated in the UI; stored lower-case, trimmed, de-duplicated. */
+  aliases: z
+    .array(z.string().trim().toLowerCase().min(2).max(40))
+    .max(20)
+    .optional()
+    .default([])
+    .transform((list) => [...new Set(list)]),
   category: z
     .string()
     .trim()
@@ -100,10 +108,6 @@ export type ProductInput = z.input<typeof productSchema>;
 export type RestockInput = z.input<typeof restockSchema>;
 export type AdjustStockInput = z.input<typeof adjustSchema>;
 
-/** round(pack_cost / units_per_pack, 2) computed by Postgres on exact numerics. */
-const unitCostSql = (packCost: string, unitsPerPack: number) =>
-  sql`round(${packCost}::numeric / ${unitsPerPack}, 2)`;
-
 /* ────────────────────────────────────────────────────────────────────────────
  * Actions
  * ──────────────────────────────────────────────────────────────────────────── */
@@ -115,6 +119,7 @@ export async function saveProduct(input: ProductInput): Promise<ActionResult<{ i
       sku: p.sku,
       name: p.name,
       category: p.category,
+      aliases: p.aliases,
       ownerId: p.ownerId,
       unitsPerPack: p.unitsPerPack,
       packCost: p.packCost,
@@ -190,55 +195,14 @@ export async function restockProduct(
 ): Promise<ActionResult<{ unitsAdded: number; newStock: number }>> {
   return run(restockSchema, input, async ({ productId, packs, packCost, newSalePrice }) =>
     db.transaction(async (tx) => {
-      const [product] = await tx
-        .select({
-          ownerId: products.ownerId,
-          unitsPerPack: products.unitsPerPack,
-          salePrice: products.salePrice,
-        })
-        .from(products)
-        .where(eq(products.id, productId))
-        .for("update");
-      if (!product) throw new ActionError("notFound");
-
-      const unitsAdded = packs * product.unitsPerPack;
-      const totalCents = packs * toCents(packCost);
-      const salePrice = newSalePrice ?? product.salePrice;
-
-      const [updated] = await tx
-        .update(products)
-        .set({
-          currentStock: sql`${products.currentStock} + ${unitsAdded}`,
-          packCost,
-          unitCost: unitCostSql(packCost, product.unitsPerPack),
-          salePrice,
-          updatedAt: new Date(),
-        })
-        .where(eq(products.id, productId))
-        .returning({ currentStock: products.currentStock, unitCost: products.unitCost });
-
-      const [txn] = await tx
-        .insert(transactions)
-        .values({
-          type: "RESTOCK",
-          paymentMethod: "NONE",
-          totalAmount: centsToDecimal(totalCents),
-          notes: `${packs} × ${product.unitsPerPack}u`,
-          source: "WEB_MANUAL",
-        })
-        .returning({ id: transactions.id });
-
-      await tx.insert(transactionItems).values({
-        transactionId: txn.id,
+      const r = await commitRestock(tx, {
         productId,
-        ownerId: product.ownerId,
-        quantityDelta: unitsAdded,
-        unitPriceSnapshot: salePrice,
-        unitCostSnapshot: updated.unitCost,
-        lineTotal: centsToDecimal(totalCents),
+        packs,
+        packCost,
+        newSalePrice: newSalePrice ?? null,
+        source: "WEB_MANUAL",
       });
-
-      return { unitsAdded, newStock: updated.currentStock };
+      return { unitsAdded: r.unitsAdded, newStock: r.newStock };
     }),
   );
 }

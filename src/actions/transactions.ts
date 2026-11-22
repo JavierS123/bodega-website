@@ -1,13 +1,13 @@
 "use server";
 
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { clients, debtPayments, products, transactionItems, transactions } from "@/db/schema";
 import type { ActionResult as BaseResult } from "@/lib/action-result";
-import { centsToDecimal, toCents } from "@/lib/money";
 import { ActionError as BaseActionError, runAdminAction, zId, zNote, zOccurredAt } from "@/lib/server/action";
+import { commitSale } from "@/lib/server/ledger";
 import { MONEY_METHODS, PAYMENT_METHODS, SALE_METHODS } from "@/lib/transactions/shared";
 
 export type TransactionErrorCode =
@@ -82,79 +82,18 @@ export type VoidTransactionInput = z.input<typeof voidSchema>;
 export async function createManualSale(
   input: ManualSaleInput,
 ): Promise<ActionResult<{ id: number; total: string }>> {
-  return run(saleSchema, input, async (v) => {
-    // Merge duplicate product lines.
-    const qtyByProduct = new Map<number, number>();
-    for (const { productId, qty } of v.items) {
-      qtyByProduct.set(productId, (qtyByProduct.get(productId) ?? 0) + qty);
-    }
-    const ids = [...qtyByProduct.keys()].sort((a, b) => a - b);
-    if (ids.length === 0) throw new ActionError("emptySale");
-
-    return db.transaction(async (tx) => {
-      if (v.clientId) {
-        const [client] = await tx.select({ id: clients.id }).from(clients).where(eq(clients.id, v.clientId));
-        if (!client) throw new ActionError("notFound");
-      }
-
-      // Lock in id order (consistent lock ordering avoids deadlocks).
-      const rows = await tx
-        .select({
-          id: products.id,
-          ownerId: products.ownerId,
-          salePrice: products.salePrice,
-          unitCost: products.unitCost,
-          isActive: products.isActive,
-        })
-        .from(products)
-        .where(inArray(products.id, ids))
-        .orderBy(asc(products.id))
-        .for("update");
-      if (rows.length !== ids.length || rows.some((p) => !p.isActive)) {
-        throw new ActionError("inactiveProduct");
-      }
-
-      const lines = rows.map((p) => {
-        const qty = qtyByProduct.get(p.id)!;
-        return { product: p, qty, lineCents: qty * toCents(p.salePrice) };
-      });
-      const totalCents = lines.reduce((sum, l) => sum + l.lineCents, 0);
-
-      const [txn] = await tx
-        .insert(transactions)
-        .values({
-          occurredAt: v.occurredAt ?? new Date(),
-          type: "SALE",
-          paymentMethod: v.paymentMethod,
-          clientId: v.clientId ?? null,
-          totalAmount: centsToDecimal(totalCents),
-          notes: v.notes,
-          source: "WEB_MANUAL",
-        })
-        .returning({ id: transactions.id });
-
-      await tx.insert(transactionItems).values(
-        lines.map((l) => ({
-          transactionId: txn.id,
-          productId: l.product.id,
-          ownerId: l.product.ownerId,
-          quantityDelta: -l.qty,
-          unitPriceSnapshot: l.product.salePrice,
-          unitCostSnapshot: l.product.unitCost,
-          lineTotal: centsToDecimal(l.lineCents),
-        })),
-      );
-
-      for (const l of lines) {
-        await tx
-          .update(products)
-          .set({ currentStock: sql`${products.currentStock} - ${l.qty}`, updatedAt: new Date() })
-          .where(eq(products.id, l.product.id));
-      }
-
-      return { id: txn.id, total: centsToDecimal(totalCents) };
-    });
-  });
+  return run(saleSchema, input, async (v) =>
+    db.transaction((tx) =>
+      commitSale(tx, {
+        items: v.items,
+        paymentMethod: v.paymentMethod,
+        clientId: v.clientId ?? null,
+        notes: v.notes,
+        occurredAt: v.occurredAt,
+        source: "WEB_MANUAL",
+      }),
+    ),
+  );
 }
 
 /**

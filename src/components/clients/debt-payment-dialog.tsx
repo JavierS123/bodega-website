@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { ClientDebtSummary, OutstandingUnit } from "@/lib/clients/shared";
+import type { ClientDebtSummary } from "@/lib/clients/shared";
 import { formatCurrency } from "@/lib/format";
 import { interpolate } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
@@ -26,19 +26,7 @@ import type { OwnerOption } from "@/lib/inventory/shared";
 import { centsToDecimal, toCents, tryCents } from "@/lib/money";
 import { localInputToIso, MONEY_METHODS, type MoneyMethod } from "@/lib/transactions/shared";
 
-/** Same greedy rule as registerDebtPayment(): whole units, oldest first, at today's price. */
-function previewSettledUnits(units: OutstandingUnit[], amountCents: number): number {
-  let remaining = amountCents;
-  let settled = 0;
-  for (const u of units) {
-    const price = tryCents(u.price) ?? 0;
-    if (u.qty <= 0 || price <= 0) continue;
-    const n = Math.min(u.qty, Math.floor(remaining / price));
-    settled += n;
-    remaining -= n * price;
-  }
-  return settled;
-}
+import { AbonoPreview } from "./abono-preview";
 
 export function DebtPaymentDialog({
   open,
@@ -82,7 +70,6 @@ export function DebtPaymentDialog({
   const amountCents = tryCents(amount);
   const exceeds = amountCents !== null && amountCents > debtCents;
   const valid = Boolean(client && debt) && amountCents !== null && amountCents > 0 && !exceeds;
-  const unitsPreview = debt && amountCents ? previewSettledUnits(debt.units, amountCents) : 0;
 
   function selectClient(id: number | null) {
     setClientId(id);
@@ -215,11 +202,7 @@ export function DebtPaymentDialog({
                     tone={amountCents !== null && amountCents === debtCents ? "positive" : "default"}
                   />
                 </div>
-                {unitsPreview > 0 && (
-                  <p className="-mt-2 text-xs text-muted-foreground">
-                    {interpolate(a.settledUnits, { units: unitsPreview })}
-                  </p>
-                )}
+                {!exceeds && <AbonoPreview units={debt.units} amountCents={amountCents} />}
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <FormField label={a.occurredAt} htmlFor="a-date" hint={t.transactions.sale.occurredAtHint}>

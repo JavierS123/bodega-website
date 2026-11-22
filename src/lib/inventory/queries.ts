@@ -20,6 +20,7 @@ export async function listInventoryProducts(): Promise<InventoryProduct[]> {
       sku: products.sku,
       name: products.name,
       category: products.category,
+      aliases: products.aliases,
       ownerId: products.ownerId,
       ownerName: owners.name,
       unitsPerPack: products.unitsPerPack,

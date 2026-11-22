@@ -22,6 +22,13 @@
       "when": 1795374653031,
       "tag": "0002_void_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795378219454,
+      "tag": "0003_product_aliases",
+      "breakpoints": true
     }
   ]
 }
