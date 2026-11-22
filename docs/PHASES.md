@@ -204,6 +204,28 @@ clicked through with an admin login.
 
 ---
 
+## Follow-up — Semantic color tokens
+
+**Status:** ✅ Complete. Applies the new CLAUDE.md rule (Shadcn semantic tokens only).
+
+- New tokens in `src/app/globals.css` (light + dark), registered as Tailwind colors:
+  `success`, `warning`, `info` (+ `-foreground`), `destructive-foreground`, and a colored
+  categorical palette `chart-1…6` (it was grayscale and unused before).
+- Conventions:
+  - **Status**: soft chip = `bg-<status>/10 text-<status> ring-<status>/25`; plain text = `text-<status>`;
+    solid fill = `bg-<status> text-<status>-foreground`.
+  - **Transaction types**: soft chips (SALE success, DEBT_PAYMENT info, RESTOCK primary, ADJUSTMENT muted).
+  - **Payment methods**: outline chips (CASH success, PAGO_MOVIL info, FIADO warning).
+  - **Owners**: `ownerColorClass()` → `bg-chart-N/15 text-foreground ring-chart-N/50`;
+    `ownerChartColor()` → `var(--chart-N)` for Recharts, so a badge and its chart series match.
+- No hardcoded Tailwind palette colors remain under `src/` (except shadcn's own `components/ui`).
+- **Light / dark toggle**: `next-themes` `ThemeProvider` in `src/app/layout.tsx` (`attribute="class"`,
+  default `system`, choice persisted in localStorage, pre-paint script = no flash). Header button
+  `src/components/layout/theme-toggle.tsx` swaps its sun/moon icon with `dark:` classes so SSR and
+  client markup match (no `mounted` state needed). Sonner toasts follow the theme automatically.
+
+---
+
 ## Open items / next up
 - Owner to confirm the `Retiro` / `Aporte` interpretation.
 - Click through all admin modals (inventory + Phase 4) with a real admin login.

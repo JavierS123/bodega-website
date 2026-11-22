@@ -24,7 +24,7 @@ export async function ComingSoon({ section, icon: Icon }: { section: Section; ic
             <Icon className="size-6 text-muted-foreground" aria-hidden />
           </div>
           <p className="flex items-center gap-1.5 font-medium">
-            <Construction className="size-4 text-amber-600" aria-hidden />
+            <Construction className="size-4 text-warning" aria-hidden />
             {t.placeholder.comingSoon}
           </p>
           <p className="max-w-md text-sm text-muted-foreground">{t.placeholder.description}</p>

@@ -140,7 +140,7 @@ export function OwnersView({ summaries, settlements }: { summaries: OwnerSummary
 
 function signTone(amount: string) {
   const c = toCents(amount);
-  return c > 0 ? "text-emerald-700 dark:text-emerald-400" : c < 0 ? "text-red-700 dark:text-red-400" : "";
+  return c > 0 ? "text-success" : c < 0 ? "text-destructive" : "";
 }
 
 function RoiBadge({ roi, t }: { roi: number | null; t: Dictionary }) {
@@ -151,8 +151,8 @@ function RoiBadge({ roi, t }: { roi: number | null; t: Dictionary }) {
       className={cn(
         "inline-flex h-5 items-center gap-1 rounded-full px-2 text-xs font-semibold tabular-nums ring-1 ring-inset",
         roi >= 0
-          ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900"
-          : "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900",
+          ? "bg-success/10 text-success ring-success/25"
+          : "bg-destructive/10 text-destructive ring-destructive/25",
       )}
     >
       <Icon className="size-3" aria-hidden />
@@ -226,8 +226,8 @@ function Metric({
         className={cn(
           "text-right tabular-nums",
           strong && "font-semibold",
-          tone === "warn" && "text-amber-700 dark:text-amber-400",
-          toCents(value) < 0 && "text-red-700 dark:text-red-400",
+          tone === "warn" && "text-warning",
+          toCents(value) < 0 && "text-destructive",
         )}
       >
         {formatCurrency(value)}
@@ -318,7 +318,7 @@ function Line({
           "shrink-0 tabular-nums",
           strong && "font-medium",
           big && "text-lg font-semibold",
-          toCents(value) < 0 && "text-red-700 dark:text-red-400",
+          toCents(value) < 0 && "text-destructive",
         )}
       >
         {formatCurrency(value)}
@@ -448,8 +448,8 @@ function settlementSign(r: SettlementRow) {
 }
 function settlementTone(r: SettlementRow) {
   return r.type === "CAPITAL_INJECTION"
-    ? "text-emerald-700 dark:text-emerald-400"
+    ? "text-success"
     : r.type === "PAYOUT_TRANSFER"
-      ? "text-red-700 dark:text-red-400"
+      ? "text-destructive"
       : "text-muted-foreground";
 }

@@ -401,13 +401,13 @@ function RowActions({
 }) {
   const a = t.inventory.actions;
   const items = [
-    { kind: "restock" as const, label: a.restock, icon: PackagePlus, className: "text-emerald-700 dark:text-emerald-400" },
+    { kind: "restock" as const, label: a.restock, icon: PackagePlus, className: "text-success" },
     {
       kind: "adjust" as const,
       label: a.adjust,
       icon: ClipboardCheck,
       // Highlight the reconciliation action where it is needed.
-      className: product.currentStock <= 0 ? "text-red-600 dark:text-red-400" : "text-sky-700 dark:text-sky-400",
+      className: product.currentStock <= 0 ? "text-destructive" : "text-info",
     },
     { kind: "edit" as const, label: a.edit, icon: Pencil, className: "" },
   ];

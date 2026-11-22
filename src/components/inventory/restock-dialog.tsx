@@ -81,7 +81,7 @@ export function RestockDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <PackagePlus className="size-4 text-emerald-600" aria-hidden />
+            <PackagePlus className="size-4 text-success" aria-hidden />
             {r.title}
           </DialogTitle>
           <DialogDescription>{interpolate(r.description, { owner: product.ownerName })}</DialogDescription>

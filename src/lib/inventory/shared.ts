@@ -82,16 +82,29 @@ export type AdjustmentReason = (typeof ADJUSTMENT_REASONS)[number];
 
 /* ── Owner colors ─────────────────────────────────────────────────────────── */
 
+/**
+ * Owners use the categorical --chart-1…6 tokens (globals.css), so a badge and
+ * a chart series for the same owner share one color. Class strings are written
+ * out in full so Tailwind can detect them. Text stays text-foreground on the
+ * tint for contrast in both themes.
+ */
 const OWNER_PALETTE = [
-  "bg-sky-100 text-sky-800 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-900",
-  "bg-violet-100 text-violet-800 ring-violet-200 dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-900",
-  "bg-orange-100 text-orange-800 ring-orange-200 dark:bg-orange-950/50 dark:text-orange-300 dark:ring-orange-900",
-  "bg-pink-100 text-pink-800 ring-pink-200 dark:bg-pink-950/50 dark:text-pink-300 dark:ring-pink-900",
-  "bg-teal-100 text-teal-800 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-900",
-  "bg-lime-100 text-lime-800 ring-lime-200 dark:bg-lime-950/50 dark:text-lime-300 dark:ring-lime-900",
+  "bg-chart-1/15 text-foreground ring-chart-1/50",
+  "bg-chart-2/15 text-foreground ring-chart-2/50",
+  "bg-chart-3/15 text-foreground ring-chart-3/50",
+  "bg-chart-4/15 text-foreground ring-chart-4/50",
+  "bg-chart-5/15 text-foreground ring-chart-5/50",
+  "bg-chart-6/15 text-foreground ring-chart-6/50",
 ];
+
+const ownerIndex = (ownerId: number) => (ownerId - 1 + OWNER_PALETTE.length) % OWNER_PALETTE.length;
 
 /** Stable color per owner id, so an owner looks the same on every page. */
 export function ownerColorClass(ownerId: number): string {
-  return OWNER_PALETTE[(ownerId - 1 + OWNER_PALETTE.length) % OWNER_PALETTE.length];
+  return OWNER_PALETTE[ownerIndex(ownerId)];
+}
+
+/** The owner's chart color as a CSS value (for Recharts fills/strokes): "var(--chart-3)". */
+export function ownerChartColor(ownerId: number): string {
+  return `var(--chart-${ownerIndex(ownerId) + 1})`;
 }

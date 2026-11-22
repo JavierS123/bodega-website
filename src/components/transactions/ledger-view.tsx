@@ -437,7 +437,7 @@ function RowActions({
   if (row.isVoided) return null;
   const items = [
     { kind: "edit" as const, label: a.edit, icon: Pencil, className: "" },
-    { kind: "void" as const, label: a.void, icon: Ban, className: "text-red-600 dark:text-red-400" },
+    { kind: "void" as const, label: a.void, icon: Ban, className: "text-destructive" },
   ];
   return (
     <div className={cn("flex items-center gap-1", withLabels ? "flex-wrap" : "justify-end")}>
@@ -467,7 +467,7 @@ export function LedgerDetail({ row }: { row: LedgerRow }) {
   return (
     <div className="grid gap-3 text-sm">
       {row.isVoided && row.voidedAt && (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-800 dark:bg-red-950/40 dark:text-red-300">
+        <p className="rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {interpolate(t.transactions.voidedInfo, {
             date: formatDateTime(row.voidedAt, locale),
             reason: row.voidReason ?? "—",
@@ -498,7 +498,7 @@ export function LedgerDetail({ row }: { row: LedgerRow }) {
                   <td
                     className={cn(
                       "px-3 py-1.5 text-right font-medium tabular-nums",
-                      i.quantityDelta < 0 ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400",
+                      i.quantityDelta < 0 ? "text-destructive" : "text-success",
                     )}
                   >
                     {i.quantityDelta > 0 ? `+${i.quantityDelta}` : i.quantityDelta}

@@ -33,6 +33,9 @@ export const en = {
     label: "Language",
     switchTo: "Cambiar a español",
   },
+  theme: {
+    toggle: "Toggle light / dark mode",
+  },
   auth: {
     adminLogin: "Admin login",
     loginTitle: "Admin sign in",

@@ -25,8 +25,8 @@ export function KpiCard({
       size="sm"
       className={cn(
         "gap-1 px-4",
-        tone === "warning" && "ring-amber-300 dark:ring-amber-800",
-        tone === "danger" && "bg-red-50/60 ring-red-300 dark:bg-red-950/30 dark:ring-red-900",
+        tone === "warning" && "ring-warning/40",
+        tone === "danger" && "bg-destructive/5 ring-destructive/30",
       )}
     >
       <div className="flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
@@ -34,9 +34,9 @@ export function KpiCard({
         <Icon
           className={cn(
             "size-4 shrink-0",
-            tone === "positive" && "text-emerald-600",
-            tone === "warning" && "text-amber-600",
-            tone === "danger" && "text-red-600",
+            tone === "positive" && "text-success",
+            tone === "warning" && "text-warning",
+            tone === "danger" && "text-destructive",
           )}
           aria-hidden
         />
@@ -44,8 +44,8 @@ export function KpiCard({
       <p
         className={cn(
           "truncate text-xl font-semibold tracking-tight tabular-nums sm:text-2xl",
-          tone === "danger" && "text-red-700 dark:text-red-400",
-          tone === "positive" && "text-emerald-700 dark:text-emerald-400",
+          tone === "danger" && "text-destructive",
+          tone === "positive" && "text-success",
         )}
       >
         {value}

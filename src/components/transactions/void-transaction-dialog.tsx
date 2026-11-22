@@ -74,7 +74,7 @@ export function VoidTransactionDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Ban className="size-4 text-red-600" aria-hidden />
+            <Ban className="size-4 text-destructive" aria-hidden />
             {interpolate(v.title, { id: row.id })}
           </DialogTitle>
           <DialogDescription>{v.description}</DialogDescription>

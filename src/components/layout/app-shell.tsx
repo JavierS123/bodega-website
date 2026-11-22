@@ -15,6 +15,7 @@ import { LanguageToggle } from "./language-toggle";
 import { MobileNav } from "./mobile-nav";
 import { SessionProvider } from "./session-provider";
 import { SidebarNav } from "./sidebar-nav";
+import { ThemeToggle } from "./theme-toggle";
 
 /**
  * Request-time chrome: reads the locale cookie and the auth session, so it is
@@ -49,6 +50,7 @@ export async function AppShell({ children }: { children: ReactNode }) {
                   <MobileNav />
                   <Brand t={t} className="lg:hidden" />
                   <div className="ml-auto flex items-center gap-2">
+                    <ThemeToggle />
                     <LanguageToggle />
                     {admin && <AdminControls t={t} email={email} />}
                   </div>
@@ -77,7 +79,7 @@ function DemoBanner({ t }: { t: Dictionary }) {
   return (
     <div
       role="status"
-      className="flex items-center justify-center gap-x-3 gap-y-1 border-b bg-amber-50 px-4 py-1.5 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+      className="flex items-center justify-center gap-x-3 gap-y-1 border-b bg-warning/10 px-4 py-1.5 text-xs text-warning"
     >
       <span className="flex min-w-0 items-center gap-1.5">
         <Eye className="size-3.5 shrink-0" aria-hidden />
@@ -85,7 +87,7 @@ function DemoBanner({ t }: { t: Dictionary }) {
       </span>
       <Link
         href="/login"
-        className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-amber-500/50 focus-visible:outline-none"
+        className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-warning/50 focus-visible:outline-none"
       >
         <LogIn className="size-3.5" aria-hidden />
         {t.auth.adminLogin}
@@ -100,7 +102,7 @@ function AdminControls({ t, email }: { t: Dictionary; email: string | null }) {
       {email && (
         <span className="hidden max-w-48 truncate text-sm text-muted-foreground md:inline">{email}</span>
       )}
-      <Badge className="gap-1 bg-emerald-600 text-white">
+      <Badge className="gap-1 bg-success text-success-foreground">
         <ShieldCheck aria-hidden />
         {t.auth.adminBadge}
       </Badge>

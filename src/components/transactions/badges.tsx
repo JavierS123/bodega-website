@@ -9,17 +9,19 @@ import { cn } from "@/lib/utils";
 const chip =
   "inline-flex h-5 items-center gap-1 rounded-full px-2 text-xs font-medium whitespace-nowrap ring-1 ring-inset";
 
+/** Transaction types: soft filled chips. Money in = success, debt collected = info. */
 const TYPE_STYLES: Record<TransactionType, string> = {
-  SALE: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900",
-  DEBT_PAYMENT: "bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900",
-  RESTOCK: "bg-violet-50 text-violet-700 ring-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:ring-violet-900",
-  STOCK_ADJUSTMENT: "bg-zinc-100 text-zinc-700 ring-zinc-200 dark:bg-zinc-800/60 dark:text-zinc-300 dark:ring-zinc-700",
+  SALE: "bg-success/10 text-success ring-success/25",
+  DEBT_PAYMENT: "bg-info/10 text-info ring-info/25",
+  RESTOCK: "bg-primary/10 text-primary ring-primary/20",
+  STOCK_ADJUSTMENT: "bg-muted text-muted-foreground ring-border",
 };
 
+/** Payment methods: outline chips, so they read differently from the type chip next to them. */
 const METHOD_STYLES: Record<PaymentMethod, string> = {
-  CASH: "bg-lime-50 text-lime-800 ring-lime-200 dark:bg-lime-950/40 dark:text-lime-300 dark:ring-lime-900",
-  PAGO_MOVIL: "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900",
-  FIADO: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900",
+  CASH: "bg-transparent text-success ring-success/40",
+  PAGO_MOVIL: "bg-transparent text-info ring-info/40",
+  FIADO: "bg-transparent text-warning ring-warning/50",
   NONE: "bg-transparent text-muted-foreground ring-transparent",
 };
 
@@ -55,7 +57,7 @@ export function SourceLabel({ source }: { source: TransactionSource }) {
 export function VoidedBadge() {
   const { t } = useI18n();
   return (
-    <span className={cn(chip, "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900")}>
+    <span className={cn(chip, "bg-destructive/10 text-destructive ring-destructive/25")}>
       {t.transactions.voidedBadge}
     </span>
   );

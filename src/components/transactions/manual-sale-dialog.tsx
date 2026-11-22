@@ -120,7 +120,7 @@ export function ManualSaleDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ShoppingCart className="size-4 text-emerald-600" aria-hidden />
+            <ShoppingCart className="size-4 text-success" aria-hidden />
             {s.title}
           </DialogTitle>
           <DialogDescription>{s.description}</DialogDescription>
@@ -186,7 +186,7 @@ export function ManualSaleDialog({
                     </div>
                   )}
                   {short && (
-                    <p className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
+                    <p className="flex items-center gap-1 text-xs text-warning">
                       <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
                       {interpolate(s.stockWarning, { stock: product.currentStock })}
                     </p>

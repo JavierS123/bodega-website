@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ThemeProvider } from "next-themes";
 import { Suspense } from "react";
 
 import { AppShell, AppShellFallback } from "@/components/layout/app-shell";
@@ -30,11 +31,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        {/* Locale + session are request-time data, so the shell streams in. */}
-        <Suspense fallback={<AppShellFallback />}>
-          <AppShell>{children}</AppShell>
-        </Suspense>
-        <Toaster richColors closeButton />
+        {/* Adds .dark on <html> before paint (no flash); remembers the choice in localStorage. */}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          {/* Locale + session are request-time data, so the shell streams in. */}
+          <Suspense fallback={<AppShellFallback />}>
+            <AppShell>{children}</AppShell>
+          </Suspense>
+          <Toaster richColors closeButton />
+        </ThemeProvider>
       </body>
     </html>
   );

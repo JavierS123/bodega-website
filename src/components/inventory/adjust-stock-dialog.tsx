@@ -78,7 +78,7 @@ export function AdjustStockDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ClipboardCheck className="size-4 text-sky-600" aria-hidden />
+            <ClipboardCheck className="size-4 text-info" aria-hidden />
             {a.title}
           </DialogTitle>
           <DialogDescription>{a.description}</DialogDescription>
@@ -121,8 +121,8 @@ export function AdjustStockDialog({
               delta === null || delta === 0
                 ? "bg-muted/60 text-muted-foreground"
                 : delta > 0
-                  ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  : "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-300",
+                  ? "bg-success/10 text-success"
+                  : "bg-destructive/10 text-destructive",
             )}
           >
             <span className="font-medium">{a.delta}</span>

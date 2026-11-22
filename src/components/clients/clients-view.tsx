@@ -319,7 +319,7 @@ function buildColumns(
             <Button
               variant="ghost"
               size="icon-sm"
-              className="text-emerald-700 dark:text-emerald-400"
+              className="text-success"
               aria-label={`${t.clients.actions.abono}: ${row.original.name}`}
               onClick={() => openAbono(row.original.id)}
               disabled={toCents(row.original.totalPending) <= 0}
@@ -350,13 +350,13 @@ function buildColumns(
 function PendingAmount({ amount, t }: { amount: string; t: Dictionary }) {
   const cents = toCents(amount);
   if (isSettled(amount)) {
-    return <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">{t.clients.settled}</span>;
+    return <span className="text-xs font-medium text-success">{t.clients.settled}</span>;
   }
   return (
     <span
       className={cn(
         "font-semibold whitespace-nowrap tabular-nums",
-        cents > 0 ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400",
+        cents > 0 ? "text-destructive" : "text-success",
       )}
       title={cents < 0 ? t.clients.credit : undefined}
     >
@@ -412,7 +412,7 @@ function ClientDetail({ client, openAbono }: { client: ClientDebtSummary; openAb
                   </ul>
                 )}
                 {toCents(o.cashCredit) !== 0 && (
-                  <p className="flex justify-between gap-2 text-xs text-emerald-700 tabular-nums dark:text-emerald-400">
+                  <p className="flex justify-between gap-2 text-xs text-success tabular-nums">
                     <span>{b.cashCredit}</span>
                     <span>−{formatCurrency(o.cashCredit)}</span>
                   </p>
@@ -463,13 +463,13 @@ function ClientDetail({ client, openAbono }: { client: ClientDebtSummary; openAb
                     <span
                       className={cn(
                         "font-semibold",
-                        h.kind === "FIADO" ? "text-amber-700 dark:text-amber-400" : "text-emerald-700 dark:text-emerald-400",
+                        h.kind === "FIADO" ? "text-warning" : "text-success",
                       )}
                     >
                       {h.kind === "FIADO" ? b.fiado : b.abono}
                     </span>
                     {h.method && <MethodBadge method={h.method} />}
-                    {h.isVoided && <span className="text-red-600">· {b.voided}</span>}
+                    {h.isVoided && <span className="text-destructive">· {b.voided}</span>}
                   </span>
                   <span className={cn("text-xs font-medium tabular-nums", h.isVoided && "line-through")}>
                     {h.kind === "FIADO" ? "+" : "−"}

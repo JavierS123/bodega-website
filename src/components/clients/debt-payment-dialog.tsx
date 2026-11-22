@@ -121,7 +121,7 @@ export function DebtPaymentDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <HandCoins className="size-4 text-emerald-600" aria-hidden />
+            <HandCoins className="size-4 text-success" aria-hidden />
             {a.title}
           </DialogTitle>
           <DialogDescription>{a.description}</DialogDescription>

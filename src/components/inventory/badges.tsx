@@ -27,10 +27,10 @@ export function StockPill({ stock, threshold }: { stock: number; threshold: numb
   const status = stockStatus(stock, threshold);
   const styles = {
     IN_STOCK:
-      "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900",
-    LOW: "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900",
+      "bg-success/10 text-success ring-success/25",
+    LOW: "bg-warning/10 text-warning ring-warning/25",
     AUDIT:
-      "bg-red-600 text-white ring-red-700 dark:bg-red-600 dark:ring-red-500",
+      "bg-destructive text-destructive-foreground ring-destructive",
   }[status];
   const Icon = status === "AUDIT" ? AlertTriangle : status === "LOW" ? TrendingDown : CircleCheck;
   const label = status === "AUDIT" ? t.inventory.stock.audit : status === "LOW" ? t.inventory.stock.low : null;
@@ -56,10 +56,10 @@ export function MarginBadge({ actual, target }: { actual: number | null; target:
   if (actual === null) return <span className="text-xs text-muted-foreground">—</span>;
   const tone =
     actual < 0
-      ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-900"
+      ? "bg-destructive/10 text-destructive ring-destructive/25"
       : actual + 0.005 < target
-        ? "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900"
-        : "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900";
+        ? "bg-warning/10 text-warning ring-warning/25"
+        : "bg-success/10 text-success ring-success/25";
   return (
     <span
       title={interpolate(t.inventory.marginTitle, { target: formatPercent(target, 0) })}

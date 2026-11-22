@@ -45,8 +45,8 @@ export function PreviewStat({
       <span
         className={cn(
           "text-sm font-semibold tabular-nums",
-          tone === "positive" && "text-emerald-700 dark:text-emerald-400",
-          tone === "negative" && "text-red-700 dark:text-red-400",
+          tone === "positive" && "text-success",
+          tone === "negative" && "text-destructive",
           tone === "muted" && "text-muted-foreground",
         )}
       >

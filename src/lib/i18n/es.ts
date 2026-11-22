@@ -31,6 +31,9 @@ export const es: Dictionary = {
     label: "Idioma",
     switchTo: "Switch to English",
   },
+  theme: {
+    toggle: "Cambiar modo claro / oscuro",
+  },
   auth: {
     adminLogin: "Acceso admin",
     loginTitle: "Iniciar sesión (Admin)",
