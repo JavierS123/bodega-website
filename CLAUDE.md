@@ -53,5 +53,6 @@ BodegaOS is a full-stack internal operations and business intelligence web app f
 
 ## 6. Code Quality & Workflow
 - Always run `npm run typecheck` and `npm run lint` before finishing a phase.
+- At the end of every phase, append its results (what was built, decisions, gotchas, open items) to `docs/PHASES.md`. Read that file first when starting a new phase.
 - Keep Server Components as default for data fetching; use `'use client'` only for interactive tables, modals, charts, and chat input.
 - Every UI table must handle loading skeletons, empty states, and mobile responsiveness gracefully.

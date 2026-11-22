@@ -10,6 +10,11 @@ export type Database = PostgresJsDatabase<typeof schema>;
  *
  * - `prepare: false` is REQUIRED for Supabase's Transaction pooler (port 6543),
  *   which does not support prepared statements.
+ * - `max_pipeline: 1` is REQUIRED too: postgres.js otherwise pipelines extra
+ *   queries onto a busy connection whenever concurrent queries outnumber `max`
+ *   (e.g. a Promise.all of 3 queries with max: 1), and through Supavisor in
+ *   transaction mode those pipelined queries never resolve — the request hangs.
+ *   With 1, extra queries simply wait for a free connection.
  * - In dev, the client is cached on globalThis so HMR doesn't leak connections.
  * - The connection is created lazily on first use, so importing this module at
  *   build time (without DATABASE_URL) is safe.
@@ -23,6 +28,7 @@ function createDb(): Database {
   }
   const client = postgres(url, {
     prepare: false,
+    max_pipeline: 1,
     max: process.env.NODE_ENV === "production" ? 1 : 5, // serverless: 1 conn per lambda
   });
   return drizzle(client, { schema });

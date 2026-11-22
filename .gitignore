@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# real Bodega exports (client names, debts) — never commit
+/scripts/data/**/*.csv

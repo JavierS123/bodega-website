@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
 
-import { AppShell, AppShellFallback } from "@/components/app-shell";
+import { AppShell, AppShellFallback } from "@/components/layout/app-shell";
 import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";

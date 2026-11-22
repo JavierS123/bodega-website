@@ -8,6 +8,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  pgView,
   text,
   timestamp,
   uniqueIndex,
@@ -47,9 +48,22 @@ export const transactionSourceEnum = pgEnum("transaction_source", [
   "CSV_IMPORT",
 ]);
 
+/**
+ * Owner money movements outside of sales:
+ * - PAYOUT_TRANSFER:    shop → owner's account (Pago Móvil). Legacy "Transferencia".
+ * - CAPITAL_INJECTION:  owner → shop. Legacy "Aporte".
+ * - CASH_DEPOSIT:       the owner's register cash deposited into the bank, so it joins
+ *                       the Pago Móvil flow (cash ↓, bank ↑; owner balance unchanged).
+ *                       payment_method = CASH (the source). Legacy "Cambio efectivo".
+ * - PROFIT_WITHDRAWAL:  owner takes profit out of money already paid out to them.
+ *                       Informational: it does NOT move shop cash or bank balances.
+ *                       Legacy "Retiro".
+ */
 export const ownerSettlementTypeEnum = pgEnum("owner_settlement_type", [
   "PAYOUT_TRANSFER",
   "CAPITAL_INJECTION",
+  "CASH_DEPOSIT",
+  "PROFIT_WITHDRAWAL",
 ]);
 
 export const chatRoleEnum = pgEnum("chat_role", ["USER", "ASSISTANT"]);
@@ -70,7 +84,7 @@ export const owners = pgTable("owners", {
   id: id(),
   name: text("name").notNull().unique(), // Javi, Frank, Anthony, Mamá
   createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
+}).enableRLS();
 
 export const products = pgTable(
   "products",
@@ -104,7 +118,7 @@ export const products = pgTable(
     check("products_sale_price_non_negative", sql`${t.salePrice} >= 0`),
     check("products_low_stock_threshold_non_negative", sql`${t.lowStockThreshold} >= 0`),
   ],
-);
+).enableRLS();
 
 export const clients = pgTable("clients", {
   id: id(),
@@ -112,7 +126,7 @@ export const clients = pgTable("clients", {
   phone: text("phone"),
   notes: text("notes"),
   createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
+}).enableRLS();
 
 export const transactions = pgTable(
   "transactions",
@@ -141,7 +155,7 @@ export const transactions = pgTable(
       sql`${t.paymentMethod} <> 'FIADO' OR ${t.clientId} IS NOT NULL`,
     ),
   ],
-);
+).enableRLS();
 
 export const transactionItems = pgTable(
   "transaction_items",
@@ -169,7 +183,7 @@ export const transactionItems = pgTable(
     index("transaction_items_owner_id_idx").on(t.ownerId),
     check("transaction_items_quantity_non_zero", sql`${t.quantityDelta} <> 0`),
   ],
-);
+).enableRLS();
 
 export const debtPayments = pgTable(
   "debt_payments",
@@ -195,7 +209,36 @@ export const debtPayments = pgTable(
     index("debt_payments_transaction_id_idx").on(t.transactionId),
     check("debt_payments_amount_positive", sql`${t.amount} > 0`),
   ],
-);
+).enableRLS();
+
+/**
+ * Units of a Fiado debt that a payment settles. Debt is tracked in UNITS and
+ * re-priced at the product's current sale_price (inflation): a client who pays
+ * late pays today's price. A debt payment with no items (or whose amount
+ * exceeds its items' line_total) is a cash credit on the client's account.
+ * See the `client_debt_balances` view.
+ */
+export const debtPaymentItems = pgTable(
+  "debt_payment_items",
+  {
+    id: id(),
+    debtPaymentId: integer("debt_payment_id")
+      .notNull()
+      .references(() => debtPayments.id, { onDelete: "cascade" }),
+    productId: integer("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "restrict" }),
+    quantity: integer("quantity").notNull(),
+    /** Price per unit actually paid on the day (for audit; balances use current price). */
+    unitPriceSnapshot: money("unit_price_snapshot").notNull(),
+    lineTotal: money("line_total").notNull(),
+  },
+  (t) => [
+    index("debt_payment_items_debt_payment_id_idx").on(t.debtPaymentId),
+    index("debt_payment_items_product_id_idx").on(t.productId),
+    check("debt_payment_items_quantity_positive", sql`${t.quantity} > 0`),
+  ],
+).enableRLS();
 
 export const ownerSettlements = pgTable(
   "owner_settlements",
@@ -214,7 +257,7 @@ export const ownerSettlements = pgTable(
     index("owner_settlements_owner_occurred_at_idx").on(t.ownerId, t.occurredAt),
     check("owner_settlements_amount_positive", sql`${t.amount} > 0`),
   ],
-);
+).enableRLS();
 
 export const aiChatMessages = pgTable(
   "ai_chat_messages",
@@ -232,7 +275,70 @@ export const aiChatMessages = pgTable(
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [index("ai_chat_messages_created_at_idx").on(t.createdAt)],
-);
+).enableRLS();
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Views
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Outstanding Fiado debt per (client, owner), RE-PRICED AT TODAY'S PRICE:
+ *
+ *   units_value = Σ (units sold on Fiado − units settled by abonos) × products.sale_price
+ *   cash_credit = Σ abono money not tied to units (debt_payments.amount − its items)
+ *   balance     = units_value − cash_credit
+ *
+ * Voided transactions are excluded. security_invoker keeps RLS in force for
+ * PostgREST callers (the app reads it through Drizzle as the owner).
+ */
+export const clientDebtBalances = pgView("client_debt_balances", {
+  clientId: integer("client_id").notNull(),
+  ownerId: integer("owner_id").notNull(),
+  unitsValue: money("units_value").notNull(),
+  cashCredit: money("cash_credit").notNull(),
+  balance: money("balance").notNull(),
+})
+  .with({ securityInvoker: true })
+  .as(sql`
+    with unit_moves as (
+      select t.client_id, ti.owner_id, ti.product_id, -ti.quantity_delta as units
+      from transaction_items ti
+      join transactions t on t.id = ti.transaction_id
+      where t.type = 'SALE' and t.payment_method = 'FIADO'
+        and not t.is_voided and t.client_id is not null
+      union all
+      select dp.client_id, dp.owner_id, dpi.product_id, -dpi.quantity
+      from debt_payment_items dpi
+      join debt_payments dp on dp.id = dpi.debt_payment_id
+      join transactions t on t.id = dp.transaction_id
+      where not t.is_voided
+    ),
+    units_value as (
+      select um.client_id, um.owner_id, sum(um.units * p.sale_price)::numeric(12, 2) as value
+      from unit_moves um
+      join products p on p.id = um.product_id
+      group by um.client_id, um.owner_id
+    ),
+    cash_credit as (
+      select dp.client_id, dp.owner_id,
+             sum(dp.amount - coalesce(i.items_total, 0))::numeric(12, 2) as value
+      from debt_payments dp
+      join transactions t on t.id = dp.transaction_id
+      left join (
+        select debt_payment_id, sum(line_total) as items_total
+        from debt_payment_items group by debt_payment_id
+      ) i on i.debt_payment_id = dp.id
+      where not t.is_voided
+      group by dp.client_id, dp.owner_id
+    )
+    select coalesce(u.client_id, c.client_id) as client_id,
+           coalesce(u.owner_id, c.owner_id) as owner_id,
+           coalesce(u.value, 0)::numeric(12, 2) as units_value,
+           coalesce(c.value, 0)::numeric(12, 2) as cash_credit,
+           (coalesce(u.value, 0) - coalesce(c.value, 0))::numeric(12, 2) as balance
+    from units_value u
+    full join cash_credit c on c.client_id = u.client_id and c.owner_id = u.owner_id
+  `);
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Relations (for Drizzle's relational query API: db.query.*)
@@ -270,7 +376,16 @@ export const transactionItemsRelations = relations(transactionItems, ({ one }) =
   owner: one(owners, { fields: [transactionItems.ownerId], references: [owners.id] }),
 }));
 
-export const debtPaymentsRelations = relations(debtPayments, ({ one }) => ({
+export const debtPaymentItemsRelations = relations(debtPaymentItems, ({ one }) => ({
+  debtPayment: one(debtPayments, {
+    fields: [debtPaymentItems.debtPaymentId],
+    references: [debtPayments.id],
+  }),
+  product: one(products, { fields: [debtPaymentItems.productId], references: [products.id] }),
+}));
+
+export const debtPaymentsRelations = relations(debtPayments, ({ one, many }) => ({
+  items: many(debtPaymentItems),
   transaction: one(transactions, {
     fields: [debtPayments.transactionId],
     references: [transactions.id],
@@ -306,6 +421,9 @@ export type TransactionItem = typeof transactionItems.$inferSelect;
 export type NewTransactionItem = typeof transactionItems.$inferInsert;
 export type DebtPayment = typeof debtPayments.$inferSelect;
 export type NewDebtPayment = typeof debtPayments.$inferInsert;
+export type DebtPaymentItem = typeof debtPaymentItems.$inferSelect;
+export type NewDebtPaymentItem = typeof debtPaymentItems.$inferInsert;
+export type ClientDebtBalance = typeof clientDebtBalances.$inferSelect;
 export type OwnerSettlement = typeof ownerSettlements.$inferSelect;
 export type NewOwnerSettlement = typeof ownerSettlements.$inferInsert;
 export type AiChatMessage = typeof aiChatMessages.$inferSelect;
@@ -316,3 +434,4 @@ export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];
 export type SettlementMethod = (typeof settlementMethodEnum.enumValues)[number];
 export type TransactionSource = (typeof transactionSourceEnum.enumValues)[number];
 export type ChatStatus = (typeof chatStatusEnum.enumValues)[number];
+export type OwnerSettlementType = (typeof ownerSettlementTypeEnum.enumValues)[number];

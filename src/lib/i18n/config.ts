@@ -18,4 +18,11 @@ export function resolveLocale(value: unknown): Locale {
   return isLocale(value) ? value : DEFAULT_LOCALE;
 }
 
+/** interpolate("{shown} of {total}", { shown: 3, total: 9 }) → "3 of 9" */
+export function interpolate(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in vars ? String(vars[key]) : match,
+  );
+}
+
 export type { Dictionary };
