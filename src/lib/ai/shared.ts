@@ -109,6 +109,14 @@ export interface ChatPayload {
   v: 1;
   draft: CashierDraft;
   final?: CashierDraft;
+  /** Set when the card was also sent to Telegram — lets web confirms update that message. */
+  telegram?: { chatId: number; messageId: number };
+}
+
+/** Live-feed refresh: new messages + current state of cards the browser still shows as pending. */
+export interface ChatPoll {
+  messages: ChatMessageView[];
+  updates: Pick<ChatMessageView, "id" | "status" | "linkedTransactionId" | "payload">[];
 }
 
 /* ── Chat feed ────────────────────────────────────────────────────────────── */

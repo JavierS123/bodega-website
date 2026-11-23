@@ -401,6 +401,87 @@ rendered in headless Chrome in light and dark mode.
 
 ---
 
+## Phase 7 — Telegram bot + production polish
+
+**Status:** ✅ Complete (typecheck, lint and production build pass). The webhook was verified end to end
+against a local production build, using test-only env overrides and real Gemini + DB. Live Telegram
+delivery is not yet exercised: that needs the deployed HTTPS URL plus the real secret and allowlist.
+
+**Built — Telegram (`/api/webhooks/telegram`)**
+- **Auth:** a constant-time check of `X-Telegram-Bot-Api-Secret-Token` against `TELEGRAM_WEBHOOK_SECRET`
+  (401 on mismatch, 503 if unconfigured). The sender must be in `TELEGRAM_ALLOWED_USER_IDS`, checked
+  on every message **and** every button tap. Only private chats are served.
+  - An unknown user is told their Telegram ID, which eases setup.
+- **Same brain:** messages go through the exact `runCashierParse()` used by the web. Both messages are
+  stored with `source = 'TELEGRAM'`.
+  - USER rows carry `parsed_payload.telegram` (`updateId`, `chatId`, …) for de-duplication, because
+    Telegram re-delivers updates.
+- **✅ Confirm / ❌ Cancel inline keyboard** (`cf:<id>` / `cx:<id>`):
+  - Confirm runs **the same** `commitChatDraft()` as the web inside one `db.transaction`, with ledger
+    `source = TELEGRAM`.
+  - Incomplete drafts (unmatched product, missing client) answer "fix it in the web AI Cashier".
+- **Two-way sync:** the card's Telegram message id is stored as `payload.telegram`.
+  - Confirming or cancelling on the **web** rewrites the Telegram message (`syncTelegramCard`).
+  - The web console polls every 15 s while visible (`pollChat`), picking up Telegram messages and cards
+    resolved elsewhere.
+- **Refactor:** `src/lib/server/chat-commit.ts` (`commitChatDraft`, `cancelChatDraftCore`) is now the one
+  confirm/cancel implementation. `actions/chat.ts` wraps it with `requireAdmin`; Telegram wraps it with the
+  allowlist.
+- **Setup script:** `npm run telegram:webhook -- set <https-url> | info | delete`.
+  - `set` registers the webhook with `secret_token`, `allowed_updates` and bot commands.
+  - It validates the secret format and https, and never prints the token.
+
+**Built — polish**
+- **Metadata:** a root title template `%s · BodegaOS` with per-page titles and descriptions, OpenGraph and
+  Twitter `summary_large_image`, `metadataBase` (`NEXT_PUBLIC_SITE_URL`, else
+  `VERCEL_PROJECT_PRODUCTION_URL`), and theme colors.
+- **Icons and share image:** `app/icon.svg`, generated `apple-icon`, and a generated 1200×630
+  `opengraph-image`.
+  - Removed the stock Next `favicon.ico` and the unused create-next-app `public/*.svg` files.
+- **Loading and errors:** `app/loading.tsx` (route-level skeleton), `app/error.tsx` (localized, retry +
+  digest), `app/global-error.tsx` (bilingual, own html/body), `app/not-found.tsx` (localized 404).
+- **README:** portfolio-grade, with 3 Mermaid diagrams (architecture, confirm sequence, data model), a
+  security model, setup steps and screenshot placeholders (`docs/screenshots/*.png`).
+
+**Security audit**
+- **Server Actions:** every mutating action goes through `runAdminAction` → `requireAdmin`. The
+  unguarded exports are intended:
+  - `signIn`/`signOut` (no DB writes; non-admins are signed straight back out);
+  - `loadOlderMessages`/`pollChat` (read-only public feed).
+- **Routes:**
+  - `/api/ai/parse`: visitors write nothing (rate-limited); admins write chat rows only.
+  - `/api/analytics/export`: read-only.
+  - `/api/webhooks/telegram`: secret + allowlist.
+- **Client bundle:** a scan of `.next/static` found 0 names or values of `GEMINI_API_KEY`,
+  `DATABASE_URL`, `DIRECT_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` or `ADMIN_EMAILS`, and no
+  `process.env` reads in client components.
+  - The only `postgres://` hit is a literal inside the postgres.js driver file that Turbopack emits as a
+    server-traced asset; no client chunk references it.
+
+**Verification (local production build, throwaway secret/allowlist/fake bot token)**
+- **Auth:** no secret header → 401, wrong secret → 401.
+- **Ignored with no writes:** a non-allow-listed user, `/help`, a group chat and a garbage body.
+- **Parse and de-dupe:** "Vendí 2 pepitos pago móvil" became a `PENDING_CONFIRMATION` card (Bs. 2,400).
+  Re-delivering the same `update_id` was a no-op. The debt question was answered from SQL.
+- **Buttons:**
+  - ✅ from a non-allow-listed user: nothing happened;
+  - ❌ cancel → `CANCELLED`;
+  - ✅ after cancel → already handled;
+  - junk callback data: ignored.
+- **✅ commit path (rolled back):** a `source = TELEGRAM` sale with stock 77 → 74, the message
+  `CONFIRMED` and linked, and a double confirm rejected. The DB was unchanged afterwards.
+- **Poll query:** returns new Telegram rows and the cancelled state.
+- **Runtime:** icon, apple-icon and OG image return 200, a 404 page is served, and page titles and
+  `og:image`/`twitter:card` meta are present.
+
+**Gotchas**
+- A layout's `title.template` applies only to **child** segments, so `/` uses `title: { absolute }`.
+- `global-error.tsx` can't use the app shell or dictionaries; it only offers `retry()` (as the Next docs
+  example does).
+- On Windows, curl/bash test messages lose UTF-8 accents. Real Telegram sends UTF-8.
+
+---
+
 ## Open items / next up
 - Owner to confirm the `Retiro` / `Aporte` interpretation.
 - Click through all admin modals (inventory + Phase 4) with a real admin login.
@@ -408,4 +489,11 @@ rendered in headless Chrome in light and dark mode.
 - Add `GEMINI_API_KEY` on Vercel too (it is set locally). Click through the AI Cashier as an admin:
   confirm one of each (sale, Fiado with a new client, abono, restock).
 - Fill in product aliases in /inventory (e.g. "colita", "pepsi negra") to sharpen matching.
-- Committed and pushed through Phase 6 (2026-11-22).
+- **Telegram go-live (with the deploy):**
+  - Set a real `TELEGRAM_WEBHOOK_SECRET` (e.g. `openssl rand -hex 32`) and your user IDs in
+    `TELEGRAM_ALLOWED_USER_IDS`, locally and on Vercel.
+  - Then run `npm run telegram:webhook -- set https://<app>.vercel.app`.
+- **Test rows from the Phase 7 webhook test:** `ai_chat_messages` ids 1–6 (Telegram) remain in the
+  public feed. Their removal was declined during the session, so delete them whenever you like.
+- Add real screenshots to `docs/screenshots/` (names listed in the README).
+- Committed and pushed through Phase 7 (2026-11-22).

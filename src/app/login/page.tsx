@@ -10,7 +10,7 @@ import { getDictionary } from "@/lib/i18n/server";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = {
-  title: "Admin sign in · BodegaOS",
+  title: "Admin sign in",
   robots: { index: false },
 };
 

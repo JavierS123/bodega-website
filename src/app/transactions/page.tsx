@@ -13,7 +13,8 @@ import { listLedger, listSaleProducts } from "@/lib/transactions/queries";
 import { parseLedgerFilters } from "@/lib/transactions/shared";
 
 export const metadata: Metadata = {
-  title: "Ledger · BodegaOS",
+  title: "Ledger",
+  description: "Every sale, restock, debt payment and stock adjustment, with filters and auditable voiding.",
 };
 
 export default async function TransactionsPage({ searchParams }: PageProps<"/transactions">) {

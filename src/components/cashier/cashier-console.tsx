@@ -4,7 +4,7 @@ import { ArrowUp, Bot, ChevronsUp, FlaskConical, Loader2, Sparkles } from "lucid
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 
-import { loadOlderMessages } from "@/actions/chat";
+import { loadOlderMessages, pollChat } from "@/actions/chat";
 import { useSession } from "@/components/layout/session-provider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,8 @@ import { useI18n } from "@/lib/i18n/provider";
 
 import type { CardCatalog, MessageUpdate } from "./confirmation-card";
 import { MessageBubble } from "./message-bubble";
+
+const POLL_MS = 15_000;
 
 /** Sandbox (visitor) messages get negative ids so they can never collide with Postgres ids. */
 let sandboxSeq = 0;
@@ -53,6 +55,48 @@ export function CashierConsole({ initial, catalog }: { initial: ChatPage; catalo
 
   const onUpdate = useCallback((id: number, update: MessageUpdate) => {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...update } : m)));
+  }, []);
+
+  // Live feed: pick up messages from other devices / Telegram and cards resolved elsewhere.
+  // Polls only while the tab is visible; read-only, so it is safe for visitors too.
+  const latest = useRef(messages);
+  useEffect(() => {
+    latest.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    let busy = false;
+    const tick = async () => {
+      if (busy || document.visibilityState !== "visible") return;
+      busy = true;
+      try {
+        const persisted = latest.current.filter((m) => m.id > 0);
+        const afterId = persisted.reduce((max, m) => Math.max(max, m.id), 0);
+        const pendingIds = persisted.filter((m) => m.status === "PENDING_CONFIRMATION").map((m) => m.id).slice(-100);
+        const poll = await pollChat({ afterId, pendingIds });
+        if (poll.messages.length === 0 && poll.updates.length === 0) return;
+        setMessages((prev) => {
+          const known = new Set(prev.map((m) => m.id));
+          const patched = prev.map((m) => {
+            const u = poll.updates.find((x) => x.id === m.id);
+            return u ? { ...m, ...u } : m;
+          });
+          // Persisted messages stay in id order; sandbox (negative-id) messages stay at the end.
+          const fresh = poll.messages.filter((m) => !known.has(m.id)).map((m) => ({ ...m, createdAt: new Date(m.createdAt) }));
+          if (fresh.length === 0) return patched;
+          return [...patched.filter((m) => m.id > 0), ...fresh, ...patched.filter((m) => m.id <= 0)];
+        });
+      } catch {
+        // Offline or transient: the next tick retries.
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = setInterval(tick, POLL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, []);
 
   async function loadOlder() {

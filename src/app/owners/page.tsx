@@ -10,7 +10,8 @@ import { getOwnerSummaries, listSettlements } from "@/lib/analytics/owners";
 import { getDictionary } from "@/lib/i18n/server";
 
 export const metadata: Metadata = {
-  title: "Owners & Cash Flow · BodegaOS",
+  title: "Owners & Cash Flow",
+  description: "Each co-owner’s investment, revenue, ROI, cash on hand and pending payouts.",
 };
 
 export default async function OwnersPage() {

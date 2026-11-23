@@ -10,7 +10,8 @@ import { getDictionary } from "@/lib/i18n/server";
 import { listInventoryProducts, listOwners } from "@/lib/inventory/queries";
 
 export const metadata: Metadata = {
-  title: "Inventory · BodegaOS",
+  title: "Inventory",
+  description: "Live stock, pack-to-unit costing, margins and low-stock alerts for every product.",
 };
 
 export default async function InventoryPage() {

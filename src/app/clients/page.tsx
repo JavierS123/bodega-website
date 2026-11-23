@@ -13,7 +13,8 @@ import { getDictionary } from "@/lib/i18n/server";
 import { listOwners } from "@/lib/inventory/queries";
 
 export const metadata: Metadata = {
-  title: "Clients & Fiado · BodegaOS",
+  title: "Clients & Fiado",
+  description: "Who owes what: Fiado debt per client and owner, re-priced at today’s prices, with payment history.",
 };
 
 export default async function ClientsPage() {

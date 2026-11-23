@@ -22,7 +22,8 @@ import { toShopDateKey } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 
 export const metadata: Metadata = {
-  title: "Analytics · BodegaOS",
+  title: "Analytics",
+  description: "Power BI-style dashboards: revenue, gross margin, owner ROI, payment mix, peak hours and a restock watchlist — all filterable and exportable to CSV.",
 };
 
 export default async function AnalyticsPage({ searchParams }: PageProps<"/analytics">) {

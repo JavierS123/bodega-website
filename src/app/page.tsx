@@ -13,7 +13,9 @@ import { listOwners } from "@/lib/inventory/queries";
 import { listSaleProducts } from "@/lib/transactions/queries";
 
 export const metadata: Metadata = {
-  title: "AI Cashier · BodegaOS",
+  // / shares the root layout segment, so the "%s · BodegaOS" template does not apply here.
+  title: { absolute: "AI Cashier · BodegaOS" },
+  description: "Log sales, Fiado, abonos and restocks in plain Spanish or English — Gemini parses them into editable confirmation cards.",
 };
 
 export default async function HomePage() {
