@@ -29,10 +29,11 @@ import {
   EMPTY_LEDGER_FILTERS,
   hasActiveLedgerFilters,
   LEDGER_PAGE_SIZE,
+  LEDGER_TYPES,
   ledgerFiltersToSearch,
+  ledgerRowKey,
   PAYMENT_METHODS,
   TRANSACTION_SOURCES,
-  TRANSACTION_TYPES,
   type ClientOption,
   type LedgerFilters,
   type LedgerPage,
@@ -95,7 +96,7 @@ export function LedgerView({
     getCoreRowModel: getCoreRowModel(),
     getExpandedRowModel: getExpandedRowModel(),
     getRowCanExpand: () => true,
-    getRowId: (row) => String(row.id),
+    getRowId: ledgerRowKey,
     manualPagination: true,
     pageCount: data.pageCount,
   });
@@ -135,7 +136,7 @@ export function LedgerView({
               value={optimistic.type}
               onChange={(v) => setFilter("type", v)}
               allLabel={fl.all}
-              options={TRANSACTION_TYPES.map((v) => ({ value: v, label: t.enums.type[v] }))}
+              options={LEDGER_TYPES.map((v) => ({ value: v, label: t.enums.type[v] }))}
             />
           </FilterField>
           <FilterField label={fl.method} htmlFor="f-method">
@@ -334,7 +335,7 @@ function buildColumns(t: Dictionary, locale: "en" | "es", openDialog: OpenDialog
           size="icon-xs"
           onClick={row.getToggleExpandedHandler()}
           aria-expanded={row.getIsExpanded()}
-          aria-label={`${row.getIsExpanded() ? t.transactions.collapse : t.transactions.expand} #${row.original.id}`}
+          aria-label={`${row.getIsExpanded() ? t.transactions.collapse : t.transactions.expand} ${rowLabel(row.original, t)}`}
         >
           <ChevronDown className={cn("transition-transform", row.getIsExpanded() && "rotate-180")} aria-hidden />
         </Button>
@@ -347,7 +348,7 @@ function buildColumns(t: Dictionary, locale: "en" | "es", openDialog: OpenDialog
         <div className="grid gap-0.5 whitespace-nowrap">
           <span className="text-xs tabular-nums">{formatDateTime(row.original.occurredAt, locale)}</span>
           <span className="font-mono text-[11px] text-muted-foreground">
-            #{row.original.id}
+            {rowLabel(row.original, t)}
             {row.original.legacyId !== null && ` · ${interpolate(t.transactions.legacy, { id: row.original.legacyId })}`}
           </span>
         </div>
@@ -358,7 +359,7 @@ function buildColumns(t: Dictionary, locale: "en" | "es", openDialog: OpenDialog
       header: c.type,
       cell: ({ row }) => (
         <div className="flex flex-col items-start gap-1">
-          <TypeBadge type={row.original.type} />
+          <TypeBadge type={row.original.type} settlementType={row.original.settlement?.type} />
           {row.original.isVoided && <VoidedBadge />}
         </div>
       ),
@@ -368,8 +369,8 @@ function buildColumns(t: Dictionary, locale: "en" | "es", openDialog: OpenDialog
       header: c.detail,
       meta: { className: "w-full max-w-0" } satisfies ColumnMeta,
       cell: ({ row }) => (
-        <p className="truncate text-sm" title={summarize(row.original)}>
-          {summarize(row.original) || <span className="text-muted-foreground">—</span>}
+        <p className="truncate text-sm" title={summarize(row.original, t)}>
+          {summarize(row.original, t) || <span className="text-muted-foreground">—</span>}
         </p>
       ),
     },
@@ -408,8 +409,14 @@ function buildColumns(t: Dictionary, locale: "en" | "es", openDialog: OpenDialog
   ];
 }
 
-/** One-line description: "2 × Coca-Cola, 1 × Oreo" or "Frank Bs. 500.00". */
-function summarize(row: LedgerRow): string {
+/** "#123" for transactions, "Mov. #45" for owner movements (separate id sequences). */
+function rowLabel(row: LedgerRow, t: Dictionary): string {
+  return row.kind === "SETTLEMENT" ? interpolate(t.transactions.movementId, { id: row.id }) : `#${row.id}`;
+}
+
+/** One-line description: "2 × Coca-Cola, 1 × Oreo", "Frank Bs. 500.00" or "Frank · Efectivo → Por Transferir". */
+function summarize(row: LedgerRow, t: Dictionary): string {
+  if (row.settlement) return `${row.settlement.ownerName} · ${t.enums.settlementFlow[row.settlement.type]}`;
   if (row.debtPayments.length > 0) {
     return row.debtPayments.map((d) => `${d.ownerName} ${formatCurrency(d.amount)}`).join(", ");
   }
@@ -436,7 +443,8 @@ function RowActions({
   const a = t.transactions.actions;
   if (row.isVoided) return null;
   const items = [
-    { kind: "edit" as const, label: a.edit, icon: Pencil, className: "" },
+    // Owner movements can only be voided (owner + amount are the whole record).
+    ...(row.kind === "TX" ? [{ kind: "edit" as const, label: a.edit, icon: Pencil, className: "" }] : []),
     { kind: "void" as const, label: a.void, icon: Ban, className: "text-destructive" },
   ];
   return (
@@ -446,7 +454,7 @@ function RowActions({
           <Button
             variant={withLabels ? "outline" : "ghost"}
             size={withLabels ? "sm" : "icon-sm"}
-            aria-label={`${label} #${row.id}`}
+            aria-label={`${label} ${rowLabel(row, t)}`}
             onClick={() => openDialog(kind, row)}
             className={className}
           >
@@ -550,7 +558,20 @@ export function LedgerDetail({ row }: { row: LedgerRow }) {
         </div>
       )}
 
-      {row.items.length === 0 && row.debtPayments.length === 0 && (
+      {row.settlement && (
+        <div className="grid gap-1.5 rounded-lg border bg-background px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
+              <OwnerBadge ownerId={row.settlement.ownerId} name={row.settlement.ownerName} />
+              <MethodBadge method={row.paymentMethod} />
+            </span>
+            <span className="font-medium tabular-nums">{formatCurrency(row.totalAmount)}</span>
+          </div>
+          <p className="text-xs text-muted-foreground">{t.enums.settlementHint[row.settlement.type]}</p>
+        </div>
+      )}
+
+      {!row.settlement && row.items.length === 0 && row.debtPayments.length === 0 && (
         <p className="text-xs text-muted-foreground">{d.noItems}</p>
       )}
 
@@ -579,19 +600,19 @@ function LedgerCard({
       <div className="flex items-start justify-between gap-3">
         <div className="grid min-w-0 gap-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <TypeBadge type={row.type} />
+            <TypeBadge type={row.type} settlementType={row.settlement?.type} />
             <MethodBadge method={row.paymentMethod} />
             {row.isVoided && <VoidedBadge />}
           </div>
           <span className="text-xs text-muted-foreground tabular-nums">
-            {formatDateTime(row.occurredAt, locale)} · #{row.id}
+            {formatDateTime(row.occurredAt, locale)} · {rowLabel(row, t)}
           </span>
         </div>
         <span className={cn("font-semibold whitespace-nowrap tabular-nums", row.isVoided && "line-through")}>
           {formatCurrency(row.totalAmount)}
         </span>
       </div>
-      <p className="line-clamp-2 text-sm">{summarize(row) || "—"}</p>
+      <p className="line-clamp-2 text-sm">{summarize(row, t) || "—"}</p>
       {row.clientName && <p className="text-xs text-muted-foreground">{row.clientName}</p>}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={onToggle} aria-expanded={expanded}>

@@ -3,10 +3,14 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 
 import type { Database } from "@/db";
-import { aiChatMessages, clients, type TransactionSource } from "@/db/schema";
+import { aiChatMessages, clients, owners, ownerSettlements, type TransactionSource } from "@/db/schema";
+import { wasEdited } from "@/lib/ai/draft";
 import { isActionIntent, type CashierDraft, type ChatPayload } from "@/lib/ai/shared";
+import { toCents } from "@/lib/money";
+import { SETTLEMENT_METHODS } from "@/lib/owners/shared";
 
 import { ActionError } from "./action";
+import { proposeLesson } from "./ai-feedback";
 import { commitDebtPayment, commitRestock, commitSale } from "./ledger";
 
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -25,7 +29,7 @@ type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
 export async function commitChatDraft(
   tx: Tx,
   { messageId, draft, source }: { messageId: number; draft: CashierDraft; source: TransactionSource },
-): Promise<{ transactionId: number; total: string }> {
+): Promise<{ transactionId: number | null; settlementId: number | null; total: string }> {
   const [msg] = await tx
     .select({ role: aiChatMessages.role, status: aiChatMessages.status, payload: aiChatMessages.parsedPayload })
     .from(aiChatMessages)
@@ -55,9 +59,24 @@ export async function commitChatDraft(
     clientId = existing?.id ?? (await tx.insert(clients).values({ name }).returning({ id: clients.id }))[0].id;
   }
 
-  let transactionId: number;
+  let transactionId: number | null = null;
+  let settlementId: number | null = null;
   let total: string;
-  if (draft.intent === "SALE") {
+  if (draft.intent === "SETTLEMENT") {
+    // Owner money movement: one owner_settlements row (not a ledger transaction).
+    const type = draft.settlement_type;
+    const method = draft.settlement_method ?? (type ? SETTLEMENT_METHODS[type][0] : null);
+    if (!type || !method || !SETTLEMENT_METHODS[type].includes(method)) throw new ActionError("validation");
+    if (!draft.owner_id || !draft.amount || toCents(draft.amount) <= 0) throw new ActionError("validation");
+    const [owner] = await tx.select({ id: owners.id }).from(owners).where(eq(owners.id, draft.owner_id));
+    if (!owner) throw new ActionError("notFound");
+    const [row] = await tx
+      .insert(ownerSettlements)
+      .values({ ownerId: owner.id, type, amount: draft.amount, paymentMethod: method, notes, source })
+      .returning({ id: ownerSettlements.id, amount: ownerSettlements.amount });
+    settlementId = row.id;
+    total = row.amount;
+  } else if (draft.intent === "SALE") {
     if (!draft.payment_method) throw new ActionError("validation");
     const r = await commitSale(tx, { items, paymentMethod: draft.payment_method, clientId, notes, occurredAt: null, source });
     transactionId = r.id;
@@ -93,7 +112,17 @@ export async function commitChatDraft(
 
   // Totals in the audit copy are what Postgres actually committed (today's prices).
   const final: CashierDraft = { ...draft, client_id: clientId, is_new_client: false, total_amount: total };
-  const payload: ChatPayload = { ...stored, v: 1, draft: stored.draft, final };
+  // Implicit feedback: a human correction of the AI's reading becomes a lesson proposal (reviewed on /skill).
+  const edited = wasEdited(stored.draft, final);
+  const payload: ChatPayload = {
+    ...stored,
+    v: 1,
+    draft: stored.draft,
+    final,
+    edited,
+    ...(settlementId ? { settlementId } : {}),
+  };
+  if (edited) await proposeLesson(tx, { messageId, origin: "EDITED_CONFIRM", draft: stored.draft, final });
   await tx
     .update(aiChatMessages)
     .set({
@@ -103,7 +132,7 @@ export async function commitChatDraft(
     })
     .where(eq(aiChatMessages.id, messageId));
 
-  return { transactionId, total };
+  return { transactionId, settlementId, total };
 }
 
 /** Cancel a still-pending draft. Authorization is the caller's job. */

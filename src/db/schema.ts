@@ -76,6 +76,15 @@ export const chatStatusEnum = pgEnum("chat_status", [
   "ERROR",
 ]);
 
+/** AI Cashier skill: lessons learned from feedback go through human review before reaching the prompt. */
+export const aiLessonStatusEnum = pgEnum("ai_lesson_status", ["PROPOSED", "ACTIVE", "ARCHIVED"]);
+/**
+ * - EDITED_CONFIRM:  an admin changed the card before confirming (the diff is a correction).
+ * - CANCEL_FEEDBACK: a cancelled card flagged "the AI got it wrong".
+ * - MANUAL:          written directly on the skill page.
+ */
+export const aiLessonOriginEnum = pgEnum("ai_lesson_origin", ["EDITED_CONFIRM", "CANCEL_FEEDBACK", "MANUAL"]);
+
 /* ────────────────────────────────────────────────────────────────────────────
  * Tables
  * ──────────────────────────────────────────────────────────────────────────── */
@@ -262,9 +271,17 @@ export const ownerSettlements = pgTable(
     paymentMethod: settlementMethodEnum("payment_method").notNull(),
     occurredAt: timestamptz("occurred_at").notNull().defaultNow(),
     notes: text("notes"),
+    /** Where the movement was entered (shown in the ledger like any transaction). */
+    source: transactionSourceEnum("source").notNull().default("WEB_MANUAL"),
+    legacyId: integer("legacy_id"), // row id from the Google Sheets export
+    /** Voided movements stay for audit and stop counting in every balance. */
+    isVoided: boolean("is_voided").notNull().default(false),
+    voidedAt: timestamptz("voided_at"),
+    voidReason: text("void_reason"),
   },
   (t) => [
     index("owner_settlements_owner_occurred_at_idx").on(t.ownerId, t.occurredAt),
+    index("owner_settlements_occurred_at_idx").on(t.occurredAt),
     check("owner_settlements_amount_positive", sql`${t.amount} > 0`),
   ],
 ).enableRLS();
@@ -285,6 +302,44 @@ export const aiChatMessages = pgTable(
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [index("ai_chat_messages_created_at_idx").on(t.createdAt)],
+).enableRLS();
+
+/**
+ * Editable documents of the AI Cashier "skill", keyed by slug:
+ * - `rules`:   shop knowledge injected into every Gemini prompt (vocabulary, conventions, examples).
+ * - `help_es` / `help_en`: the /help reply (web console + Telegram).
+ * A missing row means "use the built-in default" (src/lib/ai/skill-shared.ts).
+ */
+export const aiSkillDocs = pgTable("ai_skill_docs", {
+  slug: text("slug").primaryKey(),
+  content: text("content").notNull(),
+  updatedAt: timestamptz("updated_at").notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+}).enableRLS();
+
+/**
+ * Lessons the parser learns from feedback. PROPOSED rows wait for an admin;
+ * only ACTIVE rows are injected into the prompt.
+ */
+export const aiLessons = pgTable(
+  "ai_lessons",
+  {
+    id: id(),
+    status: aiLessonStatusEnum("status").notNull().default("PROPOSED"),
+    origin: aiLessonOriginEnum("origin").notNull(),
+    /** The user message that triggered it (shown as context; also a worked example). */
+    exampleInput: text("example_input"),
+    /** The rule itself, as injected into the prompt. */
+    content: text("content").notNull(),
+    sourceMessageId: integer("source_message_id").references(() => aiChatMessages.id, { onDelete: "set null" }),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    reviewedAt: timestamptz("reviewed_at"),
+    reviewedBy: text("reviewed_by"),
+  },
+  (t) => [
+    index("ai_lessons_status_idx").on(t.status, t.createdAt),
+    check("ai_lessons_content_length", sql`char_length(${t.content}) between 1 and 600`),
+  ],
 ).enableRLS();
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -438,6 +493,9 @@ export type OwnerSettlement = typeof ownerSettlements.$inferSelect;
 export type NewOwnerSettlement = typeof ownerSettlements.$inferInsert;
 export type AiChatMessage = typeof aiChatMessages.$inferSelect;
 export type NewAiChatMessage = typeof aiChatMessages.$inferInsert;
+export type AiLesson = typeof aiLessons.$inferSelect;
+export type AiLessonStatus = (typeof aiLessonStatusEnum.enumValues)[number];
+export type AiLessonOrigin = (typeof aiLessonOriginEnum.enumValues)[number];
 
 export type TransactionType = (typeof transactionTypeEnum.enumValues)[number];
 export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];

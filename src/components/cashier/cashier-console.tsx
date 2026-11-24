@@ -248,7 +248,7 @@ export function CashierConsole({ initial, catalog }: { initial: ChatPage; catalo
         {showExamples && (
           <div className="mx-auto flex w-full max-w-3xl gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]" aria-label={c.examples}>
             <Sparkles className="mt-1 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-            {EXAMPLE_PROMPTS[locale].map((prompt) => (
+            {["/help", ...EXAMPLE_PROMPTS[locale]].map((prompt) => (
               <button
                 key={prompt}
                 type="button"
@@ -277,6 +277,9 @@ export function CashierConsole({ initial, catalog }: { initial: ChatPage; catalo
             {sending ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowUp aria-hidden />}
           </Button>
         </form>
+        {!showExamples && (
+          <p className="mx-auto w-full max-w-3xl px-1 text-[11px] text-muted-foreground">{c.helpHint}</p>
+        )}
       </div>
     </Card>
   );

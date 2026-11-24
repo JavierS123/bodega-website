@@ -483,7 +483,7 @@ delivery is not yet exercised: that needs the deployed HTTPS URL plus the real s
 ---
 
 ## Open items / next up
-- Owner to confirm the `Retiro` / `Aporte` interpretation.
+- ~~Owner to confirm the `Retiro` / `Aporte` interpretation.~~ Resolved in Phase 8.1 (Retiro reduces Total Corriente; Aporte = investment).
 - Click through all admin modals (inventory + Phase 4) with a real admin login.
 - Settlements can't be edited or voided yet (no `is_voided` on `owner_settlements`) — add if needed.
 - Add `GEMINI_API_KEY` on Vercel too (it is set locally). Click through the AI Cashier as an admin:
@@ -497,3 +497,113 @@ delivery is not yet exercised: that needs the deployed HTTPS URL plus the real s
   public feed. Their removal was declined during the session, so delete them whenever you like.
 - Add real screenshots to `docs/screenshots/` (names listed in the README).
 - Committed and pushed through Phase 7 (2026-11-22).
+
+---
+
+## Phase 8 — AI Skill: editable knowledge, feedback loop, /help
+
+**Status:** ✅ Complete (typecheck, lint and production build pass). Live Gemini re-verified on 10 prompts with
+the new prompt layout; the feedback loop was verified against the live DB in a rolled-back rehearsal. Migration
+`0004_ai_skill_feedback` **applied via Supabase MCP**.
+
+**Built**
+- **Skill documents (`ai_skill_docs`, keyed by slug):** `rules` (shop vocabulary, conventions, examples; injected
+  into every parse), `help_es` / `help_en` (the /help reply). A missing row = the built-in default in
+  `src/lib/ai/skill-shared.ts`; "Restore default" deletes the row. Edits apply on the next message (no redeploy).
+- **Prompt split (`prompt.ts`):** FIXED core in code (intents, hard rules, JSON contract, injection guard), then
+  the editable skill, then ACTIVE lessons (newest first, max 60), then the live catalog. A bad edit to the skill
+  can refine interpretation but can't break the output schema or the safety rules.
+- **Lessons (`ai_lessons`, PROPOSED → ACTIVE → ARCHIVED; origin EDITED_CONFIRM / CANCEL_FEEDBACK / MANUAL):**
+  - **Implicit feedback:** `commitChatDraft` stores `payload.edited`; an edited confirm proposes a lesson in the
+    same DB transaction (one per message). A clean confirm = positive feedback (counted, no lesson).
+  - **Explicit feedback on cancelled cards** (`submitChatFeedback`, admin-only, once per card):
+    "Error mío — la IA entendió bien" (`USER_ERROR`, no lesson) or "La IA se equivocó" + optional comment
+    (`AI_WRONG` → proposal). Visitors get a simulated toast.
+  - Proposal text is a deterministic draft ("La IA propuso: … Se guardó: … Comentario: …") with the original
+    user message as `example_input`. **Human approval required** before anything reaches the prompt.
+  - "Sugerir con IA" (`suggestLesson`) asks Gemini to generalize the evidence into one rule; returns text only.
+- **`/skill` page** (public read-only, admin edits): KPI strip (accuracy = (clean confirms + user-error
+  cancels) / judged cards; clean; corrected; cancelled split by feedback), tabs Lessons (pending review with
+  evidence + editable text, active with edit/archive, archived with restore, hand-written lessons go ACTIVE
+  directly), Shop knowledge editor, Help editors (ES/EN). Nav item "Skill de la IA".
+- **/help, /ayuda, /start:** web console answers from the help doc with no Gemini call, no rate limit and no
+  DB write (`ephemeral` message); Telegram uses the same doc (`esc()`'d). `/ayuda` added to `setMyCommands`
+  (takes effect on the next `npm run telegram:webhook -- set`). `/help` chip + hint in the composer.
+- `scripts/skill-rehearsal.ts`: rolled-back end-to-end test of the loop (`npx tsx --conditions=react-server …`).
+
+**Decisions**
+- Learning = proposal + approval (owner's choice): one mistaken comment can't silently degrade the parser.
+- Skill lives in the DB (owner's choice) with code defaults, so it is editable from the app with no deploy.
+- Feedback is asked AFTER cancel (one-click cancel stays fast; the question is optional and skippable).
+- Lessons are "rules + example message", not raw few-shot dumps — cheaper prompt, easier to audit.
+
+**Gotchas / open items**
+- Telegram cancels have no feedback prompt (Telegram has no free-text field on a button tap); give feedback
+  for those from the web card, which shows the same cancelled message.
+- `ai-smoke` hit transient Gemini 503/504 ("high demand") on 2 of 10 calls; retries succeeded.
+- Rows confirmed before this phase have no `edited` flag; stats derive it from draft vs final.
+- Data refresh on 2026-11-24: `import-sheets.ts --reset` re-imported the latest CSVs (799 tx up to legacy
+  #1036, every debt/owner balance matching `dashboard.csv`); 5 Phase 4–5 test records removed by the owner.
+  From here on the app is the source of truth — don't re-run `--reset` (it would overwrite live stock).
+
+### Phase 8.1 — Owner movements in the AI Cashier + "Totales actuales" (2026-11-24)
+
+**Built**
+- **AI intent `SETTLEMENT`** (owner money movements, no products): `settlement_type` CASH_DEPOSIT ("cambio
+  efectivo"), PAYOUT_TRANSFER ("transferencia Frank 3800"), CAPITAL_INJECTION ("aporte"), PROFIT_WITHDRAWAL
+  ("retiro"); `settlement_method` defaults from `SETTLEMENT_METHODS` (only aportes can be cash or PM).
+  - The fixed prompt core defines the intent; vocabulary + examples are in the editable skill default.
+    "transferencia" inside a SALE with products stays PAGO_MOVIL (verified live).
+  - Card: movement pills, owner, amount, method (aportes only), available balance (Por Transferir for a
+    payout, Efectivo for a deposit) with an overdraft warning. Telegram renders it too.
+  - Confirm writes ONE `owner_settlements` row in the same DB transaction that confirms the message
+    (`notes = "AI: …"`). It is not a ledger transaction: `linked_transaction_id` stays null and
+    `payload.settlementId` links it; the resolved card links to /owners. `commitChatDraft` now returns
+    `{ transactionId | null, settlementId | null }`.
+  - `CashierDraft.settlement_type/settlement_method` are optional so pending cards stored earlier still validate.
+- **/owners split into "Histórico total" and "Totales actuales"** (the sheet's two blocks):
+  - Historical card: net profit + ROI, invested, revenue, cash / Pago Móvil collected (all-time).
+  - Current card: **Pago Móvil** (headline) = **Total Corriente** (personal account) + **Por Transferir**
+    (share of the shared account), then Efectivo and current Fiado. A negative Total Corriente is shown in
+    amber with "Negativo = prestado", not as an error.
+  - Formulas (validated: Total Corriente matches the sheet for all 4 owners; Javi matches on every column):
+    `Total Corriente = PAYOUT_TRANSFER − RESTOCK − PROFIT_WITHDRAWAL`,
+    `Por Transferir = PM sales + PM abonos + CASH_DEPOSIT + PM aportes − PAYOUT_TRANSFER`,
+    `Pago Móvil = Total Corriente + Por Transferir`, `Efectivo = cash collected + cash aportes − CASH_DEPOSIT`.
+  - Cash aportes now go to Efectivo instead of Por Transferir (no imported aporte is cash → no balance moved).
+  - Settlement hints updated: a Retiro reduces Total Corriente (it is not "informational" any more).
+- `scripts/skill-rehearsal.ts` also checks a SETTLEMENT confirm (row written, no ledger tx, payout-by-cash rejected).
+
+**Decision (2026-11-24): Aporte = investment**
+- The sheet counts **Aporte** as Pago Móvil income; the owner confirmed the app's treatment is the right one:
+  an aporte is capital put into the flow (to repay a "prestado" Total Corriente or buy more stock), so it
+  counts as **invested** (Invertido ↑, revenue unchanged). No formula change. Current balances match the
+  sheet either way; historical Ganancia neta intentionally differs from the sheet by 2 × aportes
+  (Javi: Bs. 19,600; Frank: Bs. 1,900).
+
+## Phase 8.2 — Owner movements in the ledger (2026-11-24)
+
+**Why:** AI-confirmed movements ("Frank cambio efectivo 15400", "Transferencia Frank 15400") were saved to
+`owner_settlements`, but `/transactions` only read `transactions`, so they never showed up. The ledger is now the
+single log of everything that moves.
+
+**Built**
+- Migration `0005_settlement_ledger` (applied): `owner_settlements` gains `source` (default `WEB_MANUAL`),
+  `legacy_id`, `is_voided`, `voided_at`, `void_reason` + index on `occurred_at`. Backfill: `[CSV_IMPORT] Legacy #N`
+  notes → `CSV_IMPORT` + legacy id (199 rows); rows referenced by a chat card's `payload.settlementId` → `WEB_AI` /
+  `TELEGRAM` (4 rows). The import now writes `source`/`legacy_id`; `commitChatDraft` writes the card's source.
+- `listLedger` = one `UNION ALL` timeline (`'TX'` | `'SETTLEMENT'`), counted and paginated in SQL, ordered by
+  `occurred_at desc`; details fetched per table. `LedgerRow` gains `kind` + `settlement`; row keys are
+  `${kind}-${id}` (ids are per table; movements display as "Mov. #id").
+- Filters: Tipo adds "Movimiento de socio"; Pago CASH/PM, Dueño, Origen, Estado and dates apply to movements;
+  Cliente / Fiado exclude them.
+- UI: type chip shows the movement kind (chart-4 tone), detail "Frank · Efectivo → Por Transferir", expanded row
+  shows owner/method/amount + the settlement hint. Movements are void-only (no edit).
+- `voidSettlement` (admin, `db.transaction`, row lock): flags the row; balances are derived, so every balance query
+  now filters `not is_voided` (`analytics/owners.ts` summary + history, `analytics/queries.ts` injections).
+
+**Verified:** typecheck + lint clean; `/transactions` = 1,006 rows (803 tx + 203 movements); type/owner/method/
+source/client/page filters return the expected counts; `/owners` 200.
+
+**Gotchas:** the owners-page history hides voided movements (the ledger keeps them). A voided movement's chat card
+still reads "Confirmado — movimiento #id".

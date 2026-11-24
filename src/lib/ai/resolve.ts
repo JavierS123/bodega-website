@@ -2,6 +2,7 @@ import "server-only";
 
 import { dictionaries, interpolate } from "@/lib/i18n/config";
 import { centsToDecimal } from "@/lib/money";
+import { SETTLEMENT_METHODS } from "@/lib/owners/shared";
 
 import type { Catalog, CatalogProduct } from "./context";
 import { applyStockWarnings, computeTotal } from "./draft";
@@ -111,6 +112,15 @@ export function resolveDraft(llm: LlmOutput, catalog: Catalog): CashierDraft {
   if (llm.intent === "DEBT_PAYMENT" && !method) notes.push(n.methodMissing);
   if (!["SALE", "DEBT_PAYMENT"].includes(llm.intent)) method = null;
 
+  /* ── Owner money movement ── */
+  const isSettlement = llm.intent === "SETTLEMENT";
+  const settlementType = isSettlement ? llm.settlement_type : null;
+  if (isSettlement) {
+    if (!settlementType) notes.push(n.settlementTypeMissing);
+    if (!owner) notes.push(llm.owner_name ? interpolate(n.ownerNotFound, { owner: llm.owner_name }) : n.ownerMissing);
+    if (!llm.amount || llm.amount <= 0) notes.push(n.amountMissing);
+  }
+
   const draft: CashierDraft = {
     intent: llm.intent,
     language: lang,
@@ -120,10 +130,13 @@ export function resolveDraft(llm: LlmOutput, catalog: Catalog): CashierDraft {
     is_new_client: isNewClient,
     owner_name: owner?.name ?? llm.owner_name,
     owner_id: owner?.id ?? null,
-    items,
+    // A movement has no products; anything the model listed is noise.
+    items: isSettlement ? [] : items,
+    settlement_type: settlementType,
+    settlement_method: settlementType ? SETTLEMENT_METHODS[settlementType][0] : null,
     pack_cost: llm.intent === "RESTOCK" && llm.pack_cost && llm.pack_cost > 0 ? centsToDecimal(Math.round(llm.pack_cost * 100)) : null,
     amount:
-      llm.intent === "DEBT_PAYMENT" && items.length === 0 && llm.amount && llm.amount > 0
+      ((llm.intent === "DEBT_PAYMENT" && items.length === 0) || isSettlement) && llm.amount && llm.amount > 0
         ? centsToDecimal(Math.round(llm.amount * 100))
         : null,
     total_amount: "0.00",

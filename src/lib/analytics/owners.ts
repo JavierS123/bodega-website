@@ -17,6 +17,7 @@ type RawOwnerRow = {
   abonos_cash: string;
   abonos_pm: string;
   injections: string;
+  injections_cash: string;
   payouts: string;
   deposits: string;
   withdrawals: string;
@@ -27,11 +28,15 @@ type RawOwnerRow = {
  * Per-owner investment, revenue, profit and balances, computed live from the
  * ledger. Voided transactions are excluded everywhere.
  *
- * The cash / Por Transferir formulas are the ones the Phase 2 import
- * reconciled exactly against the Google Sheet's "TOTALES ACTUALES"
- * (scripts/lib/import-core.ts):
- *   Cash           = cash sales + cash abonos − CASH_DEPOSIT
- *   Por Transferir = PM sales + PM abonos + CASH_DEPOSIT + CAPITAL_INJECTION − PAYOUT_TRANSFER
+ * HISTORICAL (all-time): invested, revenue (cash / Pago Móvil), net profit, ROI.
+ *
+ * CURRENT ("TOTALES ACTUALES" of the Google Sheet — reconciled against it):
+ *   Efectivo        = cash sales + cash abonos + cash aportes − CASH_DEPOSIT        (register, to be deposited)
+ *   Por Transferir  = PM sales + PM abonos + CASH_DEPOSIT + PM aportes − PAYOUT_TRANSFER  (owner's share of the shared account)
+ *   Total Corriente = PAYOUT_TRANSFER − RESTOCK − PROFIT_WITHDRAWAL                 (owner's personal account; restocks are
+ *                                                                                    paid by bank transfer from here; may be
+ *                                                                                    negative = borrowed, repaid by sales)
+ *   Pago Móvil      = Total Corriente + Por Transferir                              (all of the owner's bank money)
  */
 export async function getOwnerSummaries(): Promise<OwnerSummary[]> {
   await connection();
@@ -64,10 +69,12 @@ export async function getOwnerSummaries(): Promise<OwnerSummary[]> {
     settle as (
       select owner_id,
              sum(amount) filter (where type = 'CAPITAL_INJECTION') as injections,
+             sum(amount) filter (where type = 'CAPITAL_INJECTION' and payment_method = 'CASH') as injections_cash,
              sum(amount) filter (where type = 'PAYOUT_TRANSFER') as payouts,
              sum(amount) filter (where type = 'CASH_DEPOSIT') as deposits,
              sum(amount) filter (where type = 'PROFIT_WITHDRAWAL') as withdrawals
       from owner_settlements
+      where not is_voided
       group by owner_id
     ),
     fiado as (
@@ -82,6 +89,7 @@ export async function getOwnerSummaries(): Promise<OwnerSummary[]> {
            coalesce(a.cash, 0)::text as abonos_cash,
            coalesce(a.pm, 0)::text as abonos_pm,
            coalesce(st.injections, 0)::text as injections,
+           coalesce(st.injections_cash, 0)::text as injections_cash,
            coalesce(st.payouts, 0)::text as payouts,
            coalesce(st.deposits, 0)::text as deposits,
            coalesce(st.withdrawals, 0)::text as withdrawals,
@@ -100,7 +108,12 @@ export async function getOwnerSummaries(): Promise<OwnerSummary[]> {
     const invested = c(r.injections) + c(r.restocks);
     const revenue = c(r.sales_cash) + c(r.sales_pm) + c(r.abonos_cash) + c(r.abonos_pm);
     const net = revenue - invested;
+    const cashCollected = c(r.sales_cash) + c(r.abonos_cash);
     const pmCollected = c(r.sales_pm) + c(r.abonos_pm);
+    const injectionsCash = c(r.injections_cash);
+    const injectionsPm = c(r.injections) - injectionsCash;
+    const porTransferir = pmCollected + c(r.deposits) + injectionsPm - c(r.payouts);
+    const totalCorriente = c(r.payouts) - c(r.restocks) - c(r.withdrawals);
     return {
       ownerId: r.owner_id,
       ownerName: r.owner_name,
@@ -115,9 +128,14 @@ export async function getOwnerSummaries(): Promise<OwnerSummary[]> {
       netProfit: centsToDecimal(net),
       roiPct: invested > 0 ? (net / invested) * 100 : null,
       pendingFiado: centsToDecimal(c(r.pending_fiado)),
-      cashOnHand: centsToDecimal(c(r.sales_cash) + c(r.abonos_cash) - c(r.deposits)),
+      cashCollected: centsToDecimal(cashCollected),
       pagoMovilCollected: centsToDecimal(pmCollected),
-      porTransferir: centsToDecimal(pmCollected + c(r.deposits) + c(r.injections) - c(r.payouts)),
+      cashOnHand: centsToDecimal(cashCollected + injectionsCash - c(r.deposits)),
+      porTransferir: centsToDecimal(porTransferir),
+      totalCorriente: centsToDecimal(totalCorriente),
+      pagoMovilBalance: centsToDecimal(totalCorriente + porTransferir),
+      injectionsCash: centsToDecimal(injectionsCash),
+      injectionsPagoMovil: centsToDecimal(injectionsPm),
       paidOut: centsToDecimal(c(r.payouts)),
       cashDeposits: centsToDecimal(c(r.deposits)),
       withdrawals: centsToDecimal(c(r.withdrawals)),
@@ -141,5 +159,6 @@ export async function listSettlements(): Promise<SettlementRow[]> {
     })
     .from(ownerSettlements)
     .innerJoin(owners, eq(owners.id, ownerSettlements.ownerId))
+    .where(eq(ownerSettlements.isVoided, false))
     .orderBy(desc(ownerSettlements.occurredAt), desc(ownerSettlements.id));
 }

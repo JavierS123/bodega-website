@@ -7,6 +7,8 @@ import { toChatView } from "@/lib/ai/history";
 import { runCashierParse, type CashierParseResult } from "@/lib/ai/pipeline";
 import { checkRateLimit, clientIp } from "@/lib/ai/rate-limit";
 import { MAX_MESSAGE_LENGTH, type ChatMessageView, type ChatPayload, type ParseResponse } from "@/lib/ai/shared";
+import { getHelpText } from "@/lib/ai/skill";
+import { HELP_COMMAND } from "@/lib/ai/skill-shared";
 import { getCurrentUser, isAdmin } from "@/lib/auth/guards";
 import { dictionaries } from "@/lib/i18n/config";
 import { getLocale } from "@/lib/i18n/server";
@@ -31,6 +33,18 @@ export async function POST(request: Request) {
 
   const user = await getCurrentUser();
   const admin = isAdmin(user);
+
+  // /help, /ayuda: answered from the skill's help document — no Gemini call, no rate limit, not persisted.
+  if (HELP_COMMAND.test(message)) {
+    const now = new Date();
+    const base = { source: "WEB" as const, linkedTransactionId: null, ephemeral: true, payload: null, createdAt: now };
+    return json({
+      ok: true,
+      persisted: false,
+      user: { ...base, id: 0, role: "USER", senderName: user?.email ?? null, content: message, status: "INFO" },
+      assistant: { ...base, id: 0, role: "ASSISTANT", senderName: null, content: await getHelpText(await getLocale()), status: "INFO" },
+    });
+  }
 
   if (!admin) {
     const limit = checkRateLimit(`ai:${clientIp(request.headers)}`);

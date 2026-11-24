@@ -7,6 +7,7 @@ import { PageContainer, PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { listChatMessages } from "@/lib/ai/history";
+import { getOwnerSummaries } from "@/lib/analytics/owners";
 import { listClientOptions, listOpenDebts } from "@/lib/clients/queries";
 import { getDictionary } from "@/lib/i18n/server";
 import { listOwners } from "@/lib/inventory/queries";
@@ -34,13 +35,15 @@ export default async function HomePage() {
 async function CashierContent() {
   await connection();
   const initial = await listChatMessages();
-  const [products, clients, owners, debts] = await Promise.all([
+  const [products, clients, owners, debts, summaries] = await Promise.all([
     listSaleProducts(),
     listClientOptions(),
     listOwners(),
     listOpenDebts(),
+    getOwnerSummaries(),
   ]);
-  return <CashierConsole initial={initial} catalog={{ products, clients, owners, debts }} />;
+  const ownerBalances = summaries.map((s) => ({ ownerId: s.ownerId, porTransferir: s.porTransferir, cashOnHand: s.cashOnHand }));
+  return <CashierConsole initial={initial} catalog={{ products, clients, owners, debts, ownerBalances }} />;
 }
 
 function ConsoleSkeleton() {

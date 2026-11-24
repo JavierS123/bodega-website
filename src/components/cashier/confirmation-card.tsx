@@ -1,25 +1,49 @@
 "use client";
 
-import { AlertTriangle, Ban, Check, CircleCheck, ExternalLink, Loader2, Plus, Sparkles, Trash2, UserPlus } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  Bot,
+  Check,
+  CircleCheck,
+  ExternalLink,
+  Loader2,
+  MessageSquareText,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+  UserPlus,
+  UserRound,
+} from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { cancelChatDraft, confirmChatDraft } from "@/actions/chat";
+import { cancelChatDraft, confirmChatDraft, submitChatFeedback } from "@/actions/chat";
 import { AbonoPreview } from "@/components/clients/abono-preview";
 import { OwnerBadge } from "@/components/inventory/badges";
 import { Pill, PillGroup } from "@/components/shared/filter-pills";
 import { OptionSelect } from "@/components/shared/option-select";
+import { Badge } from "@/components/ui/badge";
 import { MethodBadge, TypeBadge } from "@/components/transactions/badges";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { applyStockWarnings, computeTotal } from "@/lib/ai/draft";
-import type { CashierDraft, ChatMessageView, DraftItem } from "@/lib/ai/shared";
+import { applyStockWarnings, computeTotal, wasEdited } from "@/lib/ai/draft";
+import {
+  AI_SETTLEMENT_TYPES,
+  FEEDBACK_COMMENT_MAX,
+  type CashierDraft,
+  type ChatMessageView,
+  type DraftItem,
+  type FeedbackVerdict,
+} from "@/lib/ai/shared";
 import type { OpenDebt } from "@/lib/clients/shared";
 import { formatCurrency, toShopDateKey } from "@/lib/format";
 import { interpolate } from "@/lib/i18n/config";
 import { useI18n } from "@/lib/i18n/provider";
 import type { OwnerOption } from "@/lib/inventory/shared";
+import { SETTLEMENT_METHODS } from "@/lib/owners/shared";
 import { centsToDecimal, toCents, tryCents } from "@/lib/money";
 import type { ClientOption, SaleProductOption } from "@/lib/transactions/shared";
 import { cn } from "@/lib/utils";
@@ -30,6 +54,8 @@ export interface CardCatalog {
   owners: OwnerOption[];
   /** Open Fiado debts (balances + owed units, oldest first) for abono previews and checks. */
   debts: OpenDebt[];
+  /** Current owner balances, for owner-movement cards (available money + overdraft warning). */
+  ownerBalances: { ownerId: number; porTransferir: string; cashOnHand: string }[];
 }
 
 /** Patch applied to a chat message after confirm / cancel. */
@@ -120,11 +146,16 @@ export function ConfirmationCard({
     startSaving(async () => {
       const result = await confirmChatDraft({ messageId: message.id, draft });
       if (result.ok) {
-        toast.success(interpolate(t.cashier.toasts.confirmed, { id: result.data.transactionId }));
+        const { transactionId, settlementId } = result.data;
+        toast.success(
+          settlementId
+            ? interpolate(t.cashier.toasts.confirmedSettlement, { id: settlementId })
+            : interpolate(t.cashier.toasts.confirmed, { id: transactionId ?? 0 }),
+        );
         onUpdate(message.id, {
           status: "CONFIRMED",
-          linkedTransactionId: result.data.transactionId,
-          payload: { ...payload, final: draft },
+          linkedTransactionId: transactionId,
+          payload: { ...payload, final: draft, ...(settlementId ? { settlementId } : {}) },
         });
       } else {
         toast.error(t.cashier.errors[result.error]);
@@ -154,7 +185,9 @@ export function ConfirmationCard({
       <ResolvedCard
         message={message}
         draft={payload.final ?? payload.draft}
-        edited={Boolean(payload.final) && wasEdited(payload.draft, payload.final!)}
+        edited={payload.edited ?? (Boolean(payload.final) && wasEdited(payload.draft, payload.final!))}
+        isAdmin={isAdmin}
+        onUpdate={onUpdate}
       />
     );
   }
@@ -163,6 +196,7 @@ export function ConfirmationCard({
   const isSale = draft.intent === "SALE";
   const isDebt = draft.intent === "DEBT_PAYMENT";
   const isRestock = draft.intent === "RESTOCK";
+  const isSettlement = draft.intent === "SETTLEMENT";
   const methods = isSale ? (["CASH", "PAGO_MOVIL", "FIADO"] as const) : (["CASH", "PAGO_MOVIL"] as const);
   const productOptions = catalog.products.map((p) => ({ value: p.id, label: `${p.name} · ${formatCurrency(p.salePrice)}` }));
   const listId = `clients-${message.id}`;
@@ -172,13 +206,15 @@ export function ConfirmationCard({
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <Sparkles className="size-3.5 text-primary" aria-hidden />
-          <TypeBadge type={draft.intent as "SALE" | "DEBT_PAYMENT" | "RESTOCK"} />
+          <KindBadge draft={draft} />
         </span>
         <span className="text-base font-semibold tabular-nums">{formatCurrency(draft.total_amount)}</span>
       </div>
 
       {/* Lines */}
-      {(draft.items.length > 0 || !isDebt) && (
+      {isSettlement && <SettlementFields draft={draft} catalog={catalog} update={update} invalid={invalid} />}
+
+      {!isSettlement && (draft.items.length > 0 || !isDebt) && (
         <div className="grid gap-2">
           {draft.items.map((item, index) => (
             <div key={index} className="grid gap-1">
@@ -408,9 +444,129 @@ export function ConfirmationCard({
   );
 }
 
+/* ── Owner money movement (SETTLEMENT) ───────────────────────────────────── */
+
+/** Transaction type chip, or the movement kind for owner movements. */
+function KindBadge({ draft }: { draft: CashierDraft }) {
+  const { t } = useI18n();
+  if (draft.intent !== "SETTLEMENT") return <TypeBadge type={draft.intent as "SALE" | "DEBT_PAYMENT" | "RESTOCK"} />;
+  return (
+    <Badge variant="secondary">
+      {draft.settlement_type ? t.enums.settlement[draft.settlement_type] : t.cashier.card.movement}
+    </Badge>
+  );
+}
+
+function SettlementFields({
+  draft,
+  catalog,
+  update,
+  invalid,
+}: {
+  draft: CashierDraft;
+  catalog: CardCatalog;
+  update: (patch: Partial<CashierDraft>) => void;
+  invalid: (key: Problem) => boolean;
+}) {
+  const { t } = useI18n();
+  const c = t.cashier.card;
+  const type = draft.settlement_type ?? null;
+  const methods = type ? SETTLEMENT_METHODS[type] : [];
+  const balance = catalog.ownerBalances.find((b) => b.ownerId === draft.owner_id);
+  // Money leaves the shared account (payout) or the register (deposit): show what is available.
+  const available =
+    balance && type === "PAYOUT_TRANSFER"
+      ? { label: c.availableBank, amount: balance.porTransferir }
+      : balance && type === "CASH_DEPOSIT"
+        ? { label: c.availableCash, amount: balance.cashOnHand }
+        : null;
+  const exceeds = available && draft.amount ? toCents(draft.amount) > toCents(available.amount) : false;
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">{c.movement}</span>
+        <PillGroup
+          label={c.movement}
+          className={cn("flex-wrap rounded-lg bg-muted p-0.5", invalid("settlementType") && "ring-1 ring-destructive")}
+          segmented
+        >
+          {AI_SETTLEMENT_TYPES.map((k) => (
+            <Pill
+              key={k}
+              active={type === k}
+              segmented
+              onClick={() =>
+                update({
+                  settlement_type: k,
+                  settlement_method:
+                    draft.settlement_method && SETTLEMENT_METHODS[k].includes(draft.settlement_method)
+                      ? draft.settlement_method
+                      : SETTLEMENT_METHODS[k][0],
+                })
+              }
+            >
+              {t.enums.settlement[k]}
+            </Pill>
+          ))}
+        </PillGroup>
+      </div>
+      {type && <p className="text-xs text-muted-foreground">{t.enums.settlementHint[type]}</p>}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="grid gap-1 text-xs text-muted-foreground">
+          {c.owner}
+          <OptionSelect
+            value={draft.owner_id}
+            onChange={(v) => update({ owner_id: v, owner_name: catalog.owners.find((o) => o.id === v)?.name ?? null })}
+            options={catalog.owners.map((o) => ({ value: o.id, label: o.name }))}
+            placeholder={c.ownerPlaceholder}
+            size="sm"
+            invalid={invalid("owner")}
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-muted-foreground">
+          {c.amount}
+          <Input
+            type="number"
+            inputMode="decimal"
+            min={0.01}
+            step="0.01"
+            value={draft.amount ?? ""}
+            onChange={(e) => update({ amount: tryCents(e.target.value) ? centsToDecimal(tryCents(e.target.value)!) : null })}
+            aria-invalid={invalid("amount") || undefined}
+            className="h-7 tabular-nums"
+          />
+        </label>
+      </div>
+
+      {methods.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">{c.settlementMethod}</span>
+          <PillGroup label={c.settlementMethod} className={cn("rounded-lg bg-muted p-0.5", invalid("method") && "ring-1 ring-destructive")} segmented>
+            {methods.map((m) => (
+              <Pill key={m} active={draft.settlement_method === m} onClick={() => update({ settlement_method: m })} segmented>
+                {t.enums.method[m]}
+              </Pill>
+            ))}
+          </PillGroup>
+        </div>
+      )}
+
+      {available && (
+        <p className={cn("flex items-center gap-1 text-xs", exceeds ? "text-warning" : "text-muted-foreground")}>
+          {exceeds && <AlertTriangle className="size-3" aria-hidden />}
+          {interpolate(available.label, { owner: draft.owner_name ?? "", amount: formatCurrency(available.amount) })}
+          {exceeds && ` — ${c.exceedsAvailable}`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── Validation ─────────────────────────────────────────────────────────── */
 
-type Problem = "items" | "method" | "client" | "owner" | "amount" | "packCost";
+type Problem = "items" | "method" | "client" | "owner" | "amount" | "packCost" | "settlementType";
 
 function validate(d: CashierDraft, debts: OpenDebt[]): Set<Problem> {
   const p = new Set<Problem>();
@@ -432,6 +588,11 @@ function validate(d: CashierDraft, debts: OpenDebt[]): Set<Problem> {
       if (!d.owner_id || !balance || toCents(balance) <= 0) p.add("owner");
       if (!d.amount || toCents(d.amount) <= 0 || (balance && toCents(d.amount) > toCents(balance))) p.add("amount");
     }
+  } else if (d.intent === "SETTLEMENT") {
+    if (!d.settlement_type) p.add("settlementType");
+    else if (!d.settlement_method || !SETTLEMENT_METHODS[d.settlement_type].includes(d.settlement_method)) p.add("method");
+    if (!d.owner_id) p.add("owner");
+    if (!d.amount || toCents(d.amount) <= 0) p.add("amount");
   } else if (d.intent === "RESTOCK") {
     if (d.items.length !== 1 || !linesOk) p.add("items");
     if (!d.pack_cost || toCents(d.pack_cost) <= 0) p.add("packCost");
@@ -439,23 +600,21 @@ function validate(d: CashierDraft, debts: OpenDebt[]): Set<Problem> {
   return p;
 }
 
-/** Did the human change what the AI proposed? (Totals are ignored: prices may move between parse and confirm.) */
-function wasEdited(a: CashierDraft, b: CashierDraft): boolean {
-  const key = (d: CashierDraft) =>
-    JSON.stringify([
-      d.payment_method,
-      d.client_name?.trim().toLowerCase() ?? null,
-      d.owner_id,
-      d.pack_cost,
-      d.amount,
-      d.items.map((i) => [i.product_id, i.quantity]),
-    ]);
-  return key(a) !== key(b);
-}
-
 /* ── Final states ───────────────────────────────────────────────────────── */
 
-function ResolvedCard({ message, draft, edited }: { message: ChatMessageView; draft: CashierDraft; edited: boolean }) {
+function ResolvedCard({
+  message,
+  draft,
+  edited,
+  isAdmin,
+  onUpdate,
+}: {
+  message: ChatMessageView;
+  draft: CashierDraft;
+  edited: boolean;
+  isAdmin: boolean;
+  onUpdate: (id: number, update: MessageUpdate) => void;
+}) {
   const { t } = useI18n();
   const c = t.cashier.card;
   const confirmed = message.status === "CONFIRMED";
@@ -470,8 +629,10 @@ function ResolvedCard({ message, draft, edited }: { message: ChatMessageView; dr
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="flex items-center gap-1.5">
-          <TypeBadge type={draft.intent as "SALE" | "DEBT_PAYMENT" | "RESTOCK"} />
-          {draft.payment_method && <MethodBadge method={draft.payment_method} />}
+          <KindBadge draft={draft} />
+          {(draft.payment_method ?? draft.settlement_method) && (
+            <MethodBadge method={(draft.payment_method ?? draft.settlement_method)!} />
+          )}
         </span>
         <span className={cn("font-semibold tabular-nums", !confirmed && "line-through")}>
           {formatCurrency(draft.total_amount)}
@@ -481,7 +642,7 @@ function ResolvedCard({ message, draft, edited }: { message: ChatMessageView; dr
         {[
           draft.items.map((i) => `${i.quantity} × ${i.name ?? i.query}`).join(", "),
           draft.client_name,
-          draft.items.length === 0 && draft.owner_name ? `→ ${draft.owner_name}` : null,
+          draft.items.length === 0 && draft.owner_name ? (draft.intent === "SETTLEMENT" ? draft.owner_name : `→ ${draft.owner_name}`) : null,
         ]
           .filter(Boolean)
           .join(" · ")}
@@ -490,9 +651,11 @@ function ResolvedCard({ message, draft, edited }: { message: ChatMessageView; dr
         {confirmed ? (
           <span className="flex items-center gap-1 font-medium text-success">
             <CircleCheck className="size-3.5" aria-hidden />
-            {message.linkedTransactionId
-              ? interpolate(c.confirmed, { id: message.linkedTransactionId })
-              : c.confirmedNoTx}
+            {message.payload?.settlementId
+              ? interpolate(c.confirmedSettlement, { id: message.payload.settlementId })
+              : message.linkedTransactionId
+                ? interpolate(c.confirmed, { id: message.linkedTransactionId })
+                : c.confirmedNoTx}
             {message.sandbox && <span className="font-normal text-muted-foreground">· {t.cashier.sandboxBadge}</span>}
           </span>
         ) : (
@@ -512,8 +675,124 @@ function ResolvedCard({ message, draft, edited }: { message: ChatMessageView; dr
               <ExternalLink className="size-3" aria-hidden />
             </Link>
           )}
+          {message.payload?.settlementId && (
+            <Link href="/owners" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline">
+              {c.viewOwners}
+              <ExternalLink className="size-3" aria-hidden />
+            </Link>
+          )}
         </span>
       </div>
+      {!confirmed && <CancelFeedback message={message} isAdmin={isAdmin} onUpdate={onUpdate} />}
+    </div>
+  );
+}
+
+/* ── Feedback on a cancelled card ───────────────────────────────────────── */
+
+/**
+ * Optional "why was it cancelled?" on a cancelled card: the human's own
+ * mistake (the AI read it right) or the AI's (→ a lesson proposal on /skill,
+ * with an optional comment). Visitors get a simulated toast.
+ */
+function CancelFeedback({
+  message,
+  isAdmin,
+  onUpdate,
+}: {
+  message: ChatMessageView;
+  isAdmin: boolean;
+  onUpdate: (id: number, update: MessageUpdate) => void;
+}) {
+  const { t } = useI18n();
+  const f = t.cashier.feedback;
+  const payload = message.payload!;
+  const [verdict, setVerdict] = useState<FeedbackVerdict | null>(null);
+  const [comment, setComment] = useState("");
+  const [dismissed, setDismissed] = useState(false);
+  const [sending, startSending] = useTransition();
+
+  if (payload.feedback) {
+    return (
+      <p className="flex items-start gap-1.5 border-t pt-2 text-xs">
+        <MessageSquareText className="mt-px size-3.5 shrink-0" aria-hidden />
+        <span>
+          {payload.feedback.verdict === "AI_WRONG" ? f.givenAiWrong : f.givenUserError}
+          {payload.feedback.comment && <span className="italic"> — “{payload.feedback.comment}”</span>}
+        </span>
+      </p>
+    );
+  }
+  if (dismissed) return null;
+
+  function submit(v: FeedbackVerdict) {
+    const note = v === "AI_WRONG" ? comment.trim().slice(0, FEEDBACK_COMMENT_MAX) || null : null;
+    const applied = () =>
+      onUpdate(message.id, {
+        status: message.status,
+        linkedTransactionId: message.linkedTransactionId,
+        payload: { ...payload, feedback: { verdict: v, comment: note, at: new Date().toISOString(), by: null } },
+      });
+    if (!isAdmin || message.sandbox) {
+      toast.success(f.sandbox);
+      applied();
+      return;
+    }
+    startSending(async () => {
+      const result = await submitChatFeedback({ messageId: message.id, verdict: v, comment: note });
+      if (result.ok) {
+        toast.success(v === "AI_WRONG" ? f.thanks : f.thanksUser);
+        applied();
+      } else {
+        toast.error(t.cashier.errors[result.error]);
+      }
+    });
+  }
+
+  return (
+    <div className="grid gap-2 border-t pt-2 text-xs text-foreground">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-muted-foreground">{f.question}</span>
+        <Button type="button" variant="outline" size="xs" disabled={sending} onClick={() => submit("USER_ERROR")}>
+          <UserRound aria-hidden />
+          {f.userError}
+        </Button>
+        <Button
+          type="button"
+          variant={verdict === "AI_WRONG" ? "secondary" : "outline"}
+          size="xs"
+          disabled={sending}
+          aria-expanded={verdict === "AI_WRONG"}
+          onClick={() => setVerdict(verdict === "AI_WRONG" ? null : "AI_WRONG")}
+        >
+          <Bot aria-hidden />
+          {f.aiWrong}
+        </Button>
+        {verdict === null && (
+          <Button type="button" variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setDismissed(true)}>
+            {f.skip}
+          </Button>
+        )}
+      </div>
+      {verdict === "AI_WRONG" && (
+        <div className="grid gap-1.5">
+          <label className="grid gap-1 text-muted-foreground">
+            {f.commentLabel}
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              maxLength={FEEDBACK_COMMENT_MAX}
+              rows={2}
+              placeholder={f.commentPlaceholder}
+              className="field-sizing-content min-h-14 resize-none rounded-md border border-input bg-transparent px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            />
+          </label>
+          <Button type="button" size="xs" className="justify-self-end" disabled={sending} onClick={() => submit("AI_WRONG")}>
+            {sending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />}
+            {sending ? f.sending : f.send}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

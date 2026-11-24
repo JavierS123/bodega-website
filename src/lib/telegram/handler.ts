@@ -8,6 +8,8 @@ import { aiChatMessages } from "@/db/schema";
 import { AiNotConfiguredError } from "@/lib/ai/gemini";
 import { runCashierParse, type CashierParseResult } from "@/lib/ai/pipeline";
 import { MAX_MESSAGE_LENGTH, type ChatPayload } from "@/lib/ai/shared";
+import { getHelpText } from "@/lib/ai/skill";
+import { HELP_COMMAND } from "@/lib/ai/skill-shared";
 import { dictionaries, interpolate } from "@/lib/i18n/config";
 import { ActionError } from "@/lib/server/action";
 import { cancelChatDraftCore, commitChatDraft } from "@/lib/server/chat-commit";
@@ -67,8 +69,9 @@ async function handleMessage(updateId: number, msg: NonNullable<TelegramUpdate["
     await sendMessage(chatId, esc(t.textOnly));
     return;
   }
-  if (/^\/(start|help)\b/i.test(text)) {
-    await sendMessage(chatId, t.help);
+  if (HELP_COMMAND.test(text)) {
+    // The same editable help document as the web console (/skill).
+    await sendMessage(chatId, esc(await getHelpText(lang)));
     return;
   }
 
@@ -161,7 +164,10 @@ async function handleCallback(cb: NonNullable<TelegramUpdate["callback_query"]>)
       const r = await db.transaction((tx) =>
         commitChatDraft(tx, { messageId, draft: payload.draft, source: "TELEGRAM" }),
       );
-      await answerCallback(cb.id, interpolate(t.saved, { id: r.transactionId }));
+      await answerCallback(
+        cb.id,
+        r.settlementId ? interpolate(t.savedSettlement, { id: r.settlementId }) : interpolate(t.saved, { id: r.transactionId ?? 0 }),
+      );
     } else {
       await cancelChatDraftCore(db, messageId);
       await answerCallback(cb.id, t.cancelledToast);

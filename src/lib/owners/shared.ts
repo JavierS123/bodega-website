@@ -42,14 +42,22 @@ export interface OwnerSummary {
   netProfit: string;
   /** netProfit / invested × 100; null when nothing invested. */
   roiPct: number | null;
-  /** Σ client_debt_balances.balance for this owner. */
+  /** Σ client_debt_balances.balance for this owner (current). */
   pendingFiado: string;
-  /** Cash sales + cash abonos − CASH_DEPOSIT. */
-  cashOnHand: string;
-  /** PM sales + PM abonos (all-time). */
+  /** Historical: cash sales + cash abonos (all-time). */
+  cashCollected: string;
+  /** Historical: PM sales + PM abonos (all-time). */
   pagoMovilCollected: string;
-  /** PM collected + CASH_DEPOSIT + CAPITAL_INJECTION − PAYOUT_TRANSFER. */
+  /** Current — register cash still to be deposited: cash collected + cash aportes − CASH_DEPOSIT. */
+  cashOnHand: string;
+  /** Current — owner's share of the shared bank account: PM collected + CASH_DEPOSIT + PM aportes − PAYOUT_TRANSFER. */
   porTransferir: string;
+  /** Current — owner's personal account: PAYOUT_TRANSFER − RESTOCK − PROFIT_WITHDRAWAL (may be negative). */
+  totalCorriente: string;
+  /** Current — all of the owner's bank money: totalCorriente + porTransferir. */
+  pagoMovilBalance: string;
+  injectionsCash: string;
+  injectionsPagoMovil: string;
   paidOut: string;
   cashDeposits: string;
   withdrawals: string;

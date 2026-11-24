@@ -77,7 +77,7 @@ export function EditTransactionDialog({
         </DialogHeader>
 
         <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
-          <TypeBadge type={row.type} />
+          <TypeBadge type={row.type} settlementType={row.settlement?.type} />
           <span className="font-semibold tabular-nums">{formatCurrency(row.totalAmount)}</span>
         </div>
 

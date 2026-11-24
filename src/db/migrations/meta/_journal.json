@@ -29,6 +29,20 @@
       "when": 1795378219454,
       "tag": "0003_product_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795535279161,
+      "tag": "0004_ai_skill_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795545880532,
+      "tag": "0005_settlement_ledger",
+      "breakpoints": true
     }
   ]
 }

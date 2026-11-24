@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Bot,
+  GraduationCap,
   Package,
   ReceiptText,
   Users,
@@ -10,7 +11,7 @@ import {
 
 import type { Dictionary } from "@/lib/i18n/config";
 
-type NavKey = "cashier" | "inventory" | "transactions" | "clients" | "owners" | "analytics";
+type NavKey = "cashier" | "inventory" | "transactions" | "clients" | "owners" | "analytics" | "skill";
 
 export interface NavItem {
   href: string;
@@ -33,6 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
   item("/clients", Users, "clients"),
   item("/owners", Wallet, "owners"),
   item("/analytics", BarChart3, "analytics"),
+  item("/skill", GraduationCap, "skill"),
 ];
 
 /** "/" only matches exactly; other items also match their sub-routes. */

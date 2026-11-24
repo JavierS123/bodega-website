@@ -4,6 +4,7 @@ import { Ban, Loader2 } from "lucide-react";
 import { useState, useTransition, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { voidSettlement } from "@/actions/owners";
 import { voidTransaction } from "@/actions/transactions";
 import { FormField } from "@/components/shared/form-field";
 import { Button } from "@/components/ui/button";
@@ -53,18 +54,31 @@ export function VoidTransactionDialog({
           key: `dp-${dp.id}`,
           text: interpolate(v.debtRestored, { amount: formatCurrency(dp.amount), owner: dp.ownerName }),
         }));
-  const effects = [...stockEffects, ...debtEffects];
+  const st = row.settlement;
+  const effects = st
+    ? [
+        {
+          key: "settlement",
+          text: interpolate(v.settlementEffect, {
+            owner: st.ownerName,
+            kind: t.enums.settlement[st.type],
+            amount: formatCurrency(row.totalAmount),
+          }),
+        },
+      ]
+    : [...stockEffects, ...debtEffects];
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!valid) return;
     startTransition(async () => {
-      const result = await voidTransaction({ id: row.id, reason });
+      const result = st ? await voidSettlement({ id: row.id, reason }) : await voidTransaction({ id: row.id, reason });
       if (result.ok) {
-        toast.success(interpolate(v.success, { id: row.id }));
+        toast.success(interpolate(st ? v.settlementSuccess : v.success, { id: row.id }));
         onOpenChange(false);
       } else {
-        toast.error(t.transactions.errors[result.error]);
+        const errors: Record<string, string> = t.transactions.errors;
+        toast.error(errors[result.error] ?? errors.unknown);
       }
     });
   }
@@ -75,14 +89,14 @@ export function VoidTransactionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Ban className="size-4 text-destructive" aria-hidden />
-            {interpolate(v.title, { id: row.id })}
+            {interpolate(st ? v.settlementTitle : v.title, { id: row.id })}
           </DialogTitle>
-          <DialogDescription>{v.description}</DialogDescription>
+          <DialogDescription>{st ? v.settlementDescription : v.description}</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
           <span className="flex items-center gap-1.5">
-            <TypeBadge type={row.type} />
+            <TypeBadge type={row.type} settlementType={st?.type} />
             <MethodBadge method={row.paymentMethod} />
           </span>
           <span className="font-semibold tabular-nums">{formatCurrency(row.totalAmount)}</span>
@@ -122,7 +136,7 @@ export function VoidTransactionDialog({
           </Button>
           <Button type="submit" form="void-form" variant="destructive" disabled={pending || !valid}>
             {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Ban aria-hidden />}
-            {pending ? v.confirming : v.confirm}
+            {pending ? v.confirming : st ? v.settlementConfirm : v.confirm}
           </Button>
         </DialogFooter>
       </DialogContent>

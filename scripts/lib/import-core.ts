@@ -919,6 +919,8 @@ export async function writePlan(
         paymentMethod: s.method,
         occurredAt: s.occurredAt,
         notes: s.notes,
+        source: "CSV_IMPORT" as const,
+        legacyId: s.sourceLegacyId,
       }));
       for (const batch of chunk(settlementRows, 1000)) {
         await tx.insert(schema.ownerSettlements).values(batch);

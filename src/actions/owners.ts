@@ -18,7 +18,7 @@ import {
 } from "@/lib/server/action";
 import { MONEY_METHODS } from "@/lib/transactions/shared";
 
-export type OwnerErrorCode = "unauthorized" | "validation" | "notFound" | "invalidMethod" | "unknown";
+export type OwnerErrorCode = "unauthorized" | "validation" | "notFound" | "invalidMethod" | "alreadyVoided" | "unknown";
 
 export type ActionResult<T = undefined> = BaseResult<T, OwnerErrorCode>;
 
@@ -61,5 +61,34 @@ export async function recordSettlement(input: SettlementInput): Promise<ActionRe
         .returning({ id: ownerSettlements.id });
       return { id: row.id };
     },
+  );
+}
+
+const voidSettlementSchema = z.object({ id: zId, reason: z.string().trim().min(3).max(200) });
+
+/**
+ * Void an owner money movement (from the ledger). Balances are derived, so
+ * flagging the row is the whole reversal; the row stays for the audit trail.
+ */
+export async function voidSettlement(
+  input: z.input<typeof voidSettlementSchema>,
+): Promise<ActionResult<{ id: number }>> {
+  return runAdminAction<typeof voidSettlementSchema, { id: number }, OwnerErrorCode>(
+    { schema: voidSettlementSchema, input, label: "owners" },
+    async ({ id, reason }) =>
+      db.transaction(async (tx) => {
+        const [row] = await tx
+          .select({ isVoided: ownerSettlements.isVoided })
+          .from(ownerSettlements)
+          .where(eq(ownerSettlements.id, id))
+          .for("update");
+        if (!row) throw new ActionError("notFound");
+        if (row.isVoided) throw new ActionError("alreadyVoided");
+        await tx
+          .update(ownerSettlements)
+          .set({ isVoided: true, voidedAt: new Date(), voidReason: reason })
+          .where(eq(ownerSettlements.id, id));
+        return { id };
+      }),
   );
 }

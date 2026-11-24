@@ -59,6 +59,7 @@ async function main() {
       await call("setMyCommands", {
         commands: [
           { command: "help", description: "How to log sales, Fiado, abonos and restocks" },
+          { command: "ayuda", description: "Cómo registrar ventas, fiados, abonos y compras" },
           { command: "start", description: "Start the BodegaOS cashier bot" },
         ],
       });

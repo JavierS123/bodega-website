@@ -144,7 +144,7 @@ export async function getOwnerPerformance(f: AnalyticsFilters, period: ResolvedP
       group by ti.owner_id
     ), injections as (
       select owner_id, sum(amount) v from owner_settlements s
-      where s.type = 'CAPITAL_INJECTION' and ${inWindow(sql`s.occurred_at`, w)}
+      where s.type = 'CAPITAL_INJECTION' and not s.is_voided and ${inWindow(sql`s.occurred_at`, w)}
       group by owner_id
     )
     select o.id as owner_id, o.name as owner_name,

@@ -38,6 +38,7 @@ async function main() {
         );
       }
       if (d.pack_cost) console.log(`    pack_cost=${d.pack_cost}`);
+      if (d.settlement_type) console.log(`    settlement=${d.settlement_type} via ${d.settlement_method}`);
       if (d.amount) console.log(`    amount=${d.amount}`);
       if (d.confidence_notes) console.log(`  notes: ${d.confidence_notes}`);
       console.log(`  [${r.status}] ${r.reply}`);

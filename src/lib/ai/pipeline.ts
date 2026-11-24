@@ -7,6 +7,7 @@ import { loadCatalog, renderCatalog } from "./context";
 import { parseWithGemini } from "./gemini";
 import { resolveDraft } from "./resolve";
 import { isActionIntent, type CashierDraft } from "./shared";
+import { loadPromptSkill } from "./skill";
 
 export interface CashierParseResult {
   draft: CashierDraft;
@@ -19,7 +20,8 @@ export interface CashierParseResult {
 /** message → live catalog → Gemini → resolver → (live answer for questions). No writes. */
 export async function runCashierParse(message: string): Promise<CashierParseResult> {
   const catalog = await loadCatalog();
-  const llm = await parseWithGemini(message, renderCatalog(catalog));
+  const skill = await loadPromptSkill();
+  const llm = await parseWithGemini(message, renderCatalog(catalog), skill);
   const draft = resolveDraft(llm, catalog);
 
   if (isActionIntent(draft.intent)) {

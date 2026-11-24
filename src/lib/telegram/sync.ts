@@ -25,7 +25,7 @@ export async function syncTelegramCard(messageId: number): Promise<void> {
     const draft = payload.final ?? payload.draft;
     const status =
       m.status === "CONFIRMED"
-        ? ({ kind: "confirmed", transactionId: m.txId } as const)
+        ? ({ kind: "confirmed", transactionId: m.txId, settlementId: payload.settlementId ?? null } as const)
         : m.status === "CANCELLED"
           ? ({ kind: "cancelled" } as const)
           : undefined;

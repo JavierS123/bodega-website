@@ -2,7 +2,7 @@
  * Ledger domain types and URL-filter parsing, shared by Server Components,
  * Server Actions and Client Components (no server-only imports here).
  */
-import type { PaymentMethod, TransactionSource, TransactionType } from "@/db/schema";
+import type { OwnerSettlementType, PaymentMethod, TransactionSource, TransactionType } from "@/db/schema";
 
 export const TRANSACTION_TYPES = [
   "SALE",
@@ -10,6 +10,13 @@ export const TRANSACTION_TYPES = [
   "RESTOCK",
   "STOCK_ADJUSTMENT",
 ] as const satisfies readonly TransactionType[];
+
+/**
+ * Ledger row types: every transaction type plus owner money movements
+ * (owner_settlements), so the ledger logs everything that moves.
+ */
+export const LEDGER_TYPES = [...TRANSACTION_TYPES, "SETTLEMENT"] as const;
+export type LedgerType = (typeof LEDGER_TYPES)[number];
 
 export const PAYMENT_METHODS = ["CASH", "PAGO_MOVIL", "FIADO", "NONE"] as const satisfies readonly PaymentMethod[];
 
@@ -39,7 +46,7 @@ export interface LedgerFilters {
   /** Shop-local calendar days, "YYYY-MM-DD" (inclusive). */
   from: string | null;
   to: string | null;
-  type: TransactionType | null;
+  type: LedgerType | null;
   method: PaymentMethod | null;
   source: TransactionSource | null;
   ownerId: number | null;
@@ -86,7 +93,7 @@ export function parseLedgerFilters(params: RawParams): LedgerFilters {
   return {
     from: isoDay(first(params.from)),
     to: isoDay(first(params.to)),
-    type: oneOf(TRANSACTION_TYPES, first(params.type)),
+    type: oneOf(LEDGER_TYPES, first(params.type)),
     method: oneOf(PAYMENT_METHODS, first(params.method)),
     source: oneOf(TRANSACTION_SOURCES, first(params.source)),
     ownerId: positiveInt(first(params.owner)),
@@ -149,11 +156,19 @@ export interface LedgerDebtPayment {
   items: LedgerDebtPaymentItem[];
 }
 
+export interface LedgerSettlement {
+  ownerId: number;
+  ownerName: string;
+  type: OwnerSettlementType;
+}
+
 export interface LedgerRow {
+  /** TX = transactions row; SETTLEMENT = owner_settlements row (ids are per table). */
+  kind: "TX" | "SETTLEMENT";
   id: number;
   legacyId: number | null;
   occurredAt: Date;
-  type: TransactionType;
+  type: LedgerType;
   paymentMethod: PaymentMethod;
   source: TransactionSource;
   clientId: number | null;
@@ -165,7 +180,12 @@ export interface LedgerRow {
   voidReason: string | null;
   items: LedgerItem[];
   debtPayments: LedgerDebtPayment[];
+  /** Owner money movement details (kind = SETTLEMENT only). */
+  settlement: LedgerSettlement | null;
 }
+
+/** Stable key across both tables. */
+export const ledgerRowKey = (r: Pick<LedgerRow, "kind" | "id">) => `${r.kind}-${r.id}`;
 
 export interface LedgerPage {
   rows: LedgerRow[];

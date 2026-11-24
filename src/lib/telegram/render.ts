@@ -31,12 +31,28 @@ export function cardKeyboard(messageId: number, lang: "es" | "en"): TgInlineKeyb
  */
 export function renderCard(
   draft: CashierDraft,
-  status?: { kind: "confirmed"; transactionId: number | null } | { kind: "cancelled" },
+  status?: { kind: "confirmed"; transactionId: number | null; settlementId?: number | null } | { kind: "cancelled" },
 ): string {
   const lang = draft.language;
   const d = dictionaries[lang];
   const t = d.telegram;
-  const intent = draft.intent as "SALE" | "DEBT_PAYMENT" | "RESTOCK";
+  const intent = draft.intent as "SALE" | "DEBT_PAYMENT" | "RESTOCK" | "SETTLEMENT";
+
+  if (intent === "SETTLEMENT") {
+    // Owner money movement: type, owner, amount.
+    const kind = draft.settlement_type ? d.enums.settlement[draft.settlement_type] : t.unmatched;
+    const method = draft.settlement_method ? d.enums.method[draft.settlement_method] : null;
+    const lines = [`🏦 <b>${esc([kind, method].filter(Boolean).join(" · "))}</b>`];
+    lines.push(`${esc(t.owner)}: ${esc(draft.owner_name ?? "?")}`);
+    lines.push(`<b>${esc(t.amount)}: ${formatCurrency(draft.amount ?? "0")}</b>`);
+    if (draft.confidence_notes) lines.push(`<i>${esc(t.notes)}: ${esc(draft.confidence_notes)}</i>`);
+    if (status?.kind === "confirmed") {
+      lines.push("", status.settlementId ? `<b>${esc(interpolate(t.confirmedSettlement, { id: status.settlementId }))}</b>` : `<b>✅</b>`);
+    } else if (status?.kind === "cancelled") {
+      lines.push("", `<b>${esc(t.cancelled)}</b>`);
+    }
+    return lines.join("\n");
+  }
 
   const head = [d.enums.type[intent], draft.payment_method ? d.enums.method[draft.payment_method] : null]
     .filter(Boolean)

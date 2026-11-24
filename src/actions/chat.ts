@@ -4,9 +4,11 @@ import { z } from "zod";
 
 import { db } from "@/db";
 import { listChatMessages, pollChatUpdates } from "@/lib/ai/history";
-import { CashierDraft, type ChatPage, type ChatPoll } from "@/lib/ai/shared";
+import { CashierDraft, FEEDBACK_COMMENT_MAX, FEEDBACK_VERDICTS, type ChatPage, type ChatPoll } from "@/lib/ai/shared";
 import type { ActionResult as BaseResult } from "@/lib/action-result";
+import { getCurrentUser } from "@/lib/auth/guards";
 import { runAdminAction, zId } from "@/lib/server/action";
+import { submitFeedbackCore } from "@/lib/server/ai-feedback";
 import { cancelChatDraftCore, commitChatDraft } from "@/lib/server/chat-commit";
 import { syncTelegramCard } from "@/lib/telegram/sync";
 
@@ -44,11 +46,13 @@ export type ConfirmDraftInput = z.input<typeof confirmSchema>;
  * transaction via the shared commitChatDraft(); if the draft came from
  * Telegram, its Telegram card is updated too (best-effort, after commit).
  */
-export async function confirmChatDraft(input: ConfirmDraftInput): Promise<ActionResult<{ transactionId: number }>> {
+export async function confirmChatDraft(input: ConfirmDraftInput): Promise<
+  ActionResult<{ transactionId: number | null; settlementId: number | null }>
+> {
   return run(confirmSchema, input, async ({ messageId, draft }) => {
     const r = await db.transaction((tx) => commitChatDraft(tx, { messageId, draft, source: "WEB_AI" }));
     await syncTelegramCard(messageId);
-    return { transactionId: r.transactionId };
+    return { transactionId: r.transactionId, settlementId: r.settlementId };
   });
 }
 
@@ -57,6 +61,29 @@ export async function cancelChatDraft(input: z.input<typeof cancelSchema>): Prom
   return run(cancelSchema, input, async ({ messageId }) => {
     await cancelChatDraftCore(db, messageId);
     await syncTelegramCard(messageId);
+    return undefined;
+  });
+}
+
+const feedbackSchema = z.object({
+  messageId: zId,
+  verdict: z.enum(FEEDBACK_VERDICTS),
+  comment: z
+    .string()
+    .trim()
+    .max(FEEDBACK_COMMENT_MAX)
+    .nullish()
+    .transform((v) => v || null),
+});
+
+/**
+ * Optional feedback on a cancelled card (admin only): "my mistake" vs "the AI
+ * got it wrong" (+ comment). The latter proposes a lesson for review on /skill.
+ */
+export async function submitChatFeedback(input: z.input<typeof feedbackSchema>): Promise<ActionResult> {
+  return run(feedbackSchema, input, async ({ messageId, verdict, comment }) => {
+    const user = await getCurrentUser();
+    await db.transaction((tx) => submitFeedbackCore(tx, { messageId, verdict, comment, by: user?.email ?? null }));
     return undefined;
   });
 }

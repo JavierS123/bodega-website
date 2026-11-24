@@ -16,6 +16,7 @@ export const AI_INTENTS = [
   "SALE",
   "DEBT_PAYMENT",
   "RESTOCK",
+  "SETTLEMENT",
   "DEBT_QUERY",
   "STOCK_QUERY",
   "UNKNOWN",
@@ -23,7 +24,17 @@ export const AI_INTENTS = [
 export type AiIntent = (typeof AI_INTENTS)[number];
 
 /** Intents that produce a Confirmation Card (they write to the ledger once confirmed). */
-export const ACTION_INTENTS = ["SALE", "DEBT_PAYMENT", "RESTOCK"] as const;
+export const ACTION_INTENTS = ["SALE", "DEBT_PAYMENT", "RESTOCK", "SETTLEMENT"] as const;
+
+/**
+ * Owner money movements the AI can log (SETTLEMENT intent):
+ * - CASH_DEPOSIT       "cambio efectivo": register cash deposited to the bank.
+ * - PAYOUT_TRANSFER    "transferencia": shared account → the owner's personal account.
+ * - CAPITAL_INJECTION  "aporte": the owner puts in new money.
+ * - PROFIT_WITHDRAWAL  "retiro": profit taken out of the owner's personal account.
+ */
+export const AI_SETTLEMENT_TYPES = ["CASH_DEPOSIT", "PAYOUT_TRANSFER", "CAPITAL_INJECTION", "PROFIT_WITHDRAWAL"] as const;
+export type AiSettlementType = (typeof AI_SETTLEMENT_TYPES)[number];
 export type ActionIntent = (typeof ACTION_INTENTS)[number];
 export const isActionIntent = (i: AiIntent): i is ActionIntent => (ACTION_INTENTS as readonly string[]).includes(i);
 
@@ -53,10 +64,14 @@ export const LlmOutput = z.object({
     )
     .describe("Products mentioned, in order."),
   pack_cost: z.number().nullable().describe("RESTOCK only: cost of ONE pack/bulto in Bs. Otherwise null."),
+  settlement_type: z
+    .enum(AI_SETTLEMENT_TYPES)
+    .nullable()
+    .describe("SETTLEMENT only: which owner money movement. Otherwise null."),
   amount: z
     .number()
     .nullable()
-    .describe("DEBT_PAYMENT only, when the user gives a money amount instead of products. Otherwise null."),
+    .describe("DEBT_PAYMENT by money (no products), or SETTLEMENT: the amount in Bs. Otherwise null."),
   confidence_notes: z.string().describe("Short note on anything ambiguous or assumed. Empty string if none."),
   reply: z.string().describe("One short friendly sentence for the user, in their language."),
 });
@@ -94,6 +109,10 @@ export const CashierDraft = z.object({
   owner_name: z.string().nullable(),
   owner_id: z.number().int().positive().nullable(),
   items: z.array(DraftItem).max(50),
+  /** SETTLEMENT: kind of owner money movement (optional: drafts stored before it existed lack it). */
+  settlement_type: z.enum(AI_SETTLEMENT_TYPES).nullable().optional(),
+  /** SETTLEMENT: CASH or PAGO_MOVIL (CAPITAL_INJECTION may be either; the rest are fixed). */
+  settlement_method: z.enum(["CASH", "PAGO_MOVIL"]).nullable().optional(),
   /** RESTOCK: cost per pack. */
   pack_cost: money.nullable(),
   /** DEBT_PAYMENT by amount (no items). */
@@ -104,11 +123,33 @@ export const CashierDraft = z.object({
 });
 export type CashierDraft = z.infer<typeof CashierDraft>;
 
+/**
+ * Feedback on a cancelled card:
+ * - USER_ERROR: the AI understood correctly; the human cancelled for their own reasons.
+ * - AI_WRONG:   the AI misread the message → creates a PROPOSED lesson for review.
+ */
+export const FEEDBACK_VERDICTS = ["USER_ERROR", "AI_WRONG"] as const;
+export type FeedbackVerdict = (typeof FEEDBACK_VERDICTS)[number];
+export const FEEDBACK_COMMENT_MAX = 400;
+
+export interface ChatFeedback {
+  verdict: FeedbackVerdict;
+  comment: string | null;
+  at: string;
+  by: string | null;
+}
+
 /** Stored in ai_chat_messages.parsed_payload: the AI draft and, once confirmed, what was actually saved. */
 export interface ChatPayload {
   v: 1;
   draft: CashierDraft;
   final?: CashierDraft;
+  /** Confirmed: did the human change the AI's interpretation before saving? (Implicit feedback.) */
+  edited?: boolean;
+  /** SETTLEMENT: the owner_settlements row written on confirm (settlements are not ledger transactions). */
+  settlementId?: number;
+  /** Explicit feedback given on a cancelled card. */
+  feedback?: ChatFeedback;
   /** Set when the card was also sent to Telegram — lets web confirms update that message. */
   telegram?: { chatId: number; messageId: number };
 }
@@ -134,6 +175,8 @@ export interface ChatMessageView {
   createdAt: Date;
   /** Visitor sandbox message — lives in React state only, never in Postgres. */
   sandbox?: boolean;
+  /** Local-only reply (e.g. /help) — not persisted, no sandbox badge. */
+  ephemeral?: boolean;
 }
 
 export interface ChatPage {
